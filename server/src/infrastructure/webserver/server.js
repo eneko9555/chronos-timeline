@@ -40,7 +40,7 @@ app.use(cors({
 }));
 
 // Handle preflight requests for all routes
-app.options('*', cors());
+app.options(/.*/, cors());
 app.use(express.json());
 
 // Middleware to extract user from token (Clean Arch: this is infrastructure specific middleware)
