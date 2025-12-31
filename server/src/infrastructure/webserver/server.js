@@ -33,10 +33,14 @@ connectDB();
 
 const app = express();
 app.use(cors({
-    origin: '*',
+    origin: ['https://chronos-timeline.vercel.app', 'http://localhost:5173'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
+
+// Handle preflight requests for all routes
+app.options('*', cors());
 app.use(express.json());
 
 // Middleware to extract user from token (Clean Arch: this is infrastructure specific middleware)
