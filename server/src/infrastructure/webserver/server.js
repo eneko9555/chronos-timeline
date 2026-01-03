@@ -46,7 +46,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 // Manejo explícito de OPTIONS para evitar el 502 en preflight
-app.options('*', cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
 
