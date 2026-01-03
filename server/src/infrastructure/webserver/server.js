@@ -1,6 +1,7 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const connectDB = require('../database/mongooseProvider');
 
 // Domains/Infra
@@ -31,42 +32,35 @@ const timelineController = new TimelineController(timelineUseCase);
 connectDB();
 
 const app = express();
-app.set('trust proxy', 1); // Confiar en el proxy de Railway
 
-// Verbose Logging & CORS Manual Headers
-app.use((req, res, next) => {
-    const origin = req.headers.origin || '*';
-
-    // Loguear ABSOLUTAMENTE TODO para ver qué llega a Railway
-    console.log(`[Request Received] Method: ${req.method} | URL: ${req.url} | Origin: ${req.headers.origin || 'no-origin'} | IP: ${req.ip}`);
-
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    if (req.method === 'OPTIONS') {
-        console.log(`[Preflight Response] Sending 200 OK for ${req.url}`);
-        return res.status(200).end();
-    }
-    next();
-});
+// CONFIGURACIÓN DEFINITIVA DE CORS
+app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
+}));
 
 app.use(express.json());
 
-// Ruta de prueba pública
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Server is reachable', time: new Date().toISOString() });
+// Logs para verificar que las peticiones llegan
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin || 'N/A'}`);
+    next();
 });
 
-// Middleware to extract user from token (Clean Arch: this is infrastructure specific middleware)
+// Ruta simple para probar en el navegador
+app.get('/', (req, res) => res.send('API de Chronos funcionando correctamente'));
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+// Middleware de autenticación
 const authenticate = async (req, res, next) => {
     const token = req.headers.authorization?.split('Bearer ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
         const decoded = await authProvider.verifyToken(token);
-        req.user = decoded; // Attach user info to request
+        req.user = decoded;
         next();
     } catch (err) {
         console.error("Auth Error details:", err);
@@ -76,7 +70,6 @@ const authenticate = async (req, res, next) => {
 
 // Routes
 app.post('/api/auth/login', (req, res) => authController.login(req, res));
-
 app.get('/api/timelines', authenticate, (req, res) => timelineController.listTimelines(req, res));
 app.post('/api/timelines', authenticate, (req, res) => timelineController.createTimeline(req, res));
 app.get('/api/timelines/:id', authenticate, (req, res) => timelineController.getTimeline(req, res));
@@ -85,6 +78,7 @@ app.patch('/api/timelines/:id', authenticate, (req, res) => timelineController.u
 app.delete('/api/timelines/:id', authenticate, (req, res) => timelineController.deleteTimeline(req, res));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// IMPORTANTE: Escuchar en '0.0.0.0' para que Railway pueda dirigir el tráfico al contenedor
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor listo en puerto ${PORT}`);
 });
