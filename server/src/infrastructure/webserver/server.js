@@ -1,4 +1,3 @@
-const path = require('path');
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -20,7 +19,7 @@ const TimelineController = require('../../controllers/TimelineController');
 const app = express();
 
 /* =========================
-   1. CORS (ESTABLE PARA VERCEL → RAILWAY)
+   1. CORS (EXPRESS 5 SAFE)
    ========================= */
 
 const allowedOrigins = [
@@ -30,7 +29,7 @@ const allowedOrigins = [
 
 const corsOptions = {
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // Postman / server-to-server
+        if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) {
             return callback(null, origin);
         }
@@ -42,10 +41,17 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+
+// Manejo de OPTIONS compatible con Express moderno
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        return cors(corsOptions)(req, res, next);
+    }
+    next();
+});
 
 /* =========================
-   2. MIDDLEWARES BÁSICOS
+   2. MIDDLEWARES
    ========================= */
 
 app.use(express.json());
@@ -75,11 +81,11 @@ const timelineController = new TimelineController(timelineUseCase);
    4. RUTAS DE SALUD
    ========================= */
 
-app.get('/', (req, res) => {
+app.get('/', (_, res) => {
     res.status(200).send('API de Chronos viva y coleando');
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_, res) => {
     res.status(200).json({
         status: 'ok',
         serverTime: new Date().toISOString()
@@ -87,30 +93,28 @@ app.get('/api/health', (req, res) => {
 });
 
 /* =========================
-   5. AUTH MIDDLEWARE
+   5. AUTH
    ========================= */
 
 const authenticate = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-
     try {
-        const decoded = await authProvider.verifyToken(token);
-        req.user = decoded;
+        const token = authHeader.slice(7);
+        req.user = await authProvider.verifyToken(token);
         next();
     } catch (err) {
         console.error('Auth Error:', err.message);
-        return res.status(401).json({ error: 'Invalid token' });
+        res.status(401).json({ error: 'Invalid token' });
     }
 };
 
 /* =========================
-   6. RUTAS DE LA APP
+   6. RUTAS
    ========================= */
 
 app.post('/api/auth/login', (req, res) =>
@@ -142,12 +146,12 @@ app.delete('/api/timelines/:id', authenticate, (req, res) =>
 );
 
 /* =========================
-   7. ARRANQUE (IMPORTANTE)
+   7. ARRANQUE
    ========================= */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor escuchando en puerto ${PORT}`);
-    connectDB(); // DB DESPUÉS de escuchar (evita fallos de preflight)
+    connectDB();
 });
