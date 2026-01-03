@@ -1,7 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 const express = require('express');
-const cors = require('cors');
 const connectDB = require('../database/mongooseProvider');
 
 // Domains/Infra
@@ -33,24 +32,27 @@ connectDB();
 
 const app = express();
 
-// Diagnostic logging for CORS
+// CORS Manual Headers & Preflight
 app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    // Permitir cualquier origin (con soporte para credentials)
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // Diagnostic logging
     if (req.headers.origin) {
         console.log(`[CORS Diagnostic] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
     }
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
     next();
 });
-
-const corsOptions = {
-    origin: true, // Permite todos los dominios dinámicamente
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-    credentials: true,
-    optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
-app.options(/(.*)/, cors(corsOptions));
 app.use(express.json());
 
 // Middleware to extract user from token (Clean Arch: this is infrastructure specific middleware)
