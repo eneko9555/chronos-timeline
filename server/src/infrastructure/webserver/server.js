@@ -41,27 +41,8 @@ app.use((req, res, next) => {
     next();
 });
 
-const allowedOrigins = [
-    'https://chronos-timeline.vercel.app',
-    'http://localhost:5173'
-];
-
 const corsOptions = {
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, etc.)
-        if (!origin) return callback(null, true);
-
-        const isAllowed = allowedOrigins.includes(origin) ||
-            origin.endsWith('.vercel.app') ||
-            origin.includes('localhost');
-
-        if (isAllowed) {
-            callback(null, true);
-        } else {
-            console.warn(`CORS blocked for origin: ${origin}`);
-            callback(null, false);
-        }
-    },
+    origin: true, // Permite todos los dominios dinámicamente
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     credentials: true,
