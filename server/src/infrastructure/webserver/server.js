@@ -32,15 +32,33 @@ const timelineController = new TimelineController(timelineUseCase);
 connectDB();
 
 const app = express();
-app.use(cors({
-    origin: ['https://chronos-timeline.vercel.app', 'http://localhost:5173'],
+const allowedOrigins = [
+    'https://chronos-timeline.vercel.app',
+    'http://localhost:5173'
+];
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.error(`CORS Error: Origin ${origin} not allowed`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-}));
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight requests for all routes
-app.options(/.*/, cors());
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // Middleware to extract user from token (Clean Arch: this is infrastructure specific middleware)
