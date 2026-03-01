@@ -3,14 +3,14 @@ import { X, Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { parseExcelTimeline } from '../utils/parseExcelTimeline';
 
-export const ImportExcelModal = ({ onImport, onClose }) => {
+export const ImportExcelModal = ({ onImport, onClose, existingTimelines = [] }) => {
     const backdropRef = useRef(false);
     const fileInputRef = useRef(null);
 
     const [parsedData, setParsedData] = useState(null);
     const [error, setError] = useState(null);
-    const [mode, setMode] = useState('replace');
     const [fileName, setFileName] = useState('');
+    const [timelineName, setTimelineName] = useState('');
 
     const handleFileChange = (e) => {
         const file = e.target.files?.[0];
@@ -27,6 +27,7 @@ export const ImportExcelModal = ({ onImport, onClose }) => {
                 const workbook = XLSX.read(data, { type: 'array' });
                 const result = parseExcelTimeline(workbook, XLSX);
                 setParsedData(result);
+                setTimelineName(result.timelineName || '');
             } catch (err) {
                 console.error('Error parsing Excel:', err);
                 setError('No se pudo leer el archivo. Asegúrate de que tiene el formato correcto.');
@@ -35,9 +36,13 @@ export const ImportExcelModal = ({ onImport, onClose }) => {
         reader.readAsArrayBuffer(file);
     };
 
+    const duplicateExists = parsedData && existingTimelines.some(
+        t => t.identifier?.toLowerCase() === timelineName.trim().toLowerCase()
+    );
+
     const handleImport = () => {
-        if (!parsedData) return;
-        onImport(parsedData.events, mode, parsedData.timelineName);
+        if (!parsedData || !timelineName.trim() || duplicateExists) return;
+        onImport(parsedData.events, timelineName.trim());
     };
 
     const total = parsedData
@@ -144,42 +149,41 @@ export const ImportExcelModal = ({ onImport, onClose }) => {
                             ))}
                         </div>
 
-                        {/* Mode selector */}
+                        {/* Timeline name */}
                         <div style={{ marginTop: '1.25rem' }}>
                             <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                Modo de importación
+                                Nombre del timeline
                             </label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                {[
-                                    { value: 'replace', label: 'Reemplazar' },
-                                    { value: 'merge', label: 'Fusionar' }
-                                ].map(opt => (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() => setMode(opt.value)}
-                                        style={{
-                                            flex: 1,
-                                            padding: '0.6rem',
-                                            borderRadius: '8px',
-                                            border: `1px solid ${mode === opt.value ? 'var(--accent-color)' : 'var(--border-primary)'}`,
-                                            background: mode === opt.value ? 'var(--accent-color)' : 'rgba(255,255,255,0.03)',
-                                            color: mode === opt.value ? 'white' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem',
-                                            fontWeight: '600',
-                                            transition: 'all 0.2s ease'
-                                        }}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.4rem', opacity: 0.7 }}>
-                                {mode === 'replace'
-                                    ? 'Se eliminarán todos los eventos actuales y se sustituirán por los del Excel.'
-                                    : 'Los eventos del Excel se añadirán a los ya existentes.'}
-                            </p>
+                            <input
+                                type="text"
+                                value={timelineName}
+                                onChange={(e) => setTimelineName(e.target.value)}
+                                placeholder="Nombre del timeline"
+                                style={{
+                                    width: '100%',
+                                    padding: '0.6rem 0.75rem',
+                                    borderRadius: '8px',
+                                    border: `1px solid ${duplicateExists ? 'rgba(239, 68, 68, 0.5)' : 'var(--border-primary)'}`,
+                                    background: 'rgba(255,255,255,0.03)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.9rem',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            />
+                            {duplicateExists && (
+                                <p style={{
+                                    fontSize: '0.75rem',
+                                    color: '#ef4444',
+                                    marginTop: '0.4rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem'
+                                }}>
+                                    <AlertCircle size={13} />
+                                    Ya existe un timeline con este nombre. Cambia el nombre para continuar.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -191,12 +195,12 @@ export const ImportExcelModal = ({ onImport, onClose }) => {
                     </button>
                     <button
                         onClick={handleImport}
-                        disabled={!parsedData}
+                        disabled={!parsedData || !timelineName.trim() || duplicateExists}
                         className="btn-primary"
                         style={{
                             display: 'flex', alignItems: 'center', gap: '0.5rem',
-                            opacity: parsedData ? 1 : 0.5,
-                            cursor: parsedData ? 'pointer' : 'not-allowed'
+                            opacity: parsedData && timelineName.trim() && !duplicateExists ? 1 : 0.5,
+                            cursor: parsedData && timelineName.trim() && !duplicateExists ? 'pointer' : 'not-allowed'
                         }}
                     >
                         <Upload size={16} />

@@ -70,7 +70,7 @@ export const DashboardPage = () => {
         }
     };
 
-    const handleImportExcel = async (events, mode, timelineName) => {
+    const handleImportExcel = async (events, timelineName) => {
         try {
             const newTimeline = await apiClient.createTimeline(token, timelineName);
             if (newTimeline.error) {
@@ -300,6 +300,7 @@ export const DashboardPage = () => {
                 <ImportExcelModal
                     onImport={handleImportExcel}
                     onClose={() => setShowImportModal(false)}
+                    existingTimelines={timelines}
                 />
             )}
         </div>
