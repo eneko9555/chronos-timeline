@@ -49,6 +49,9 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                 borderRadius: '20px',
                 width: '100%',
                 maxWidth: '450px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
                 overflow: 'hidden',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
             }}>
@@ -58,7 +61,8 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    background: 'rgba(255,255,255,0.02)'
+                    background: 'rgba(255,255,255,0.02)',
+                    flexShrink: 0
                 }}>
                     <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
                         Filtrar Contenido
@@ -68,7 +72,7 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                     </button>
                 </div>
 
-                <div style={{ padding: '1.5rem' }}>
+                <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, minHeight: 0 }}>
                     <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -131,9 +135,7 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                             );
                         })}
                     </div>
-                </div>
-
-                <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-primary)', maxHeight: '300px', overflowY: 'auto' }}>
+                    <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: '1.5rem', marginTop: '0.5rem' }}>
                     <div style={{ marginBottom: '1.5rem' }}>
                         <h3 style={{ fontSize: '1rem', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             Filtrar por Tags
@@ -211,9 +213,10 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                             </p>
                         )}
                     </div>
+                    </div>
                 </div>
 
-                <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', textAlign: 'right' }}>
+                <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', textAlign: 'right', flexShrink: 0 }}>
                     <button
                         onClick={onClose}
                         style={{

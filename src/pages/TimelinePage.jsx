@@ -4,7 +4,7 @@ import { differenceInDays } from 'date-fns';
 import { Timeline } from '../components/Timeline';
 import { EventViewer } from '../components/EventViewer';
 import { createEvent, MIN_ZOOM, MAX_ZOOM } from '../utils';
-import { Plus, ArrowLeft, Save, GitCompare, X, Maximize, Minimize, Clock, SlidersHorizontal, Download, Loader2 } from 'lucide-react';
+import { Plus, ArrowLeft, Save, GitCompare, X, Maximize, Minimize, Clock, SlidersHorizontal, Download, Loader2, FileSpreadsheet } from 'lucide-react';
 import { ComparisonModal } from '../components/ComparisonModal';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
@@ -15,6 +15,7 @@ import { MapViewer } from '../components/MapViewer';
 import { THEMES } from '../constants/themes';
 import { useTimelineExport } from '../components/timeline/useTimelineExport';
 import { ExportPDFModal } from '../components/ExportPDFModal';
+import { exportTimelineToExcel } from '../utils/exportExcelTimeline';
 
 export const TimelinePage = () => {
     const { id } = useParams();
@@ -693,6 +694,14 @@ export const TimelinePage = () => {
                                 <span>PDF</span>
                             </>
                         )}
+                    </button>
+                    <button
+                        onClick={() => exportTimelineToExcel(events, timelineName)}
+                        className="btn-secondary"
+                        style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        <FileSpreadsheet size={16} />
+                        <span>Excel</span>
                     </button>
                     <button
                         onClick={() => setShowFilterModal(true)}
