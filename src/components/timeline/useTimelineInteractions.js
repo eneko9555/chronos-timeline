@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { MIN_ZOOM, MAX_ZOOM } from '../../utils';
 
 export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, onZoomChange, getX, onEventClick, setScrollLeft, layout) => {
     const containerRef = useRef(null);
@@ -17,6 +18,7 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
 
     // Pointer Handlers
     const handlePointerDown = (e, event, type) => {
+        if (e.button !== 0) return; // Only handle left-click
         e.stopPropagation();
         e.preventDefault();
 
@@ -33,7 +35,7 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
         });
         setTempEventState({ ...event });
         setIsValidDrop(true); // Assume valid initially
-        document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize';
+        document.body.style.cursor = 'grabbing';
     };
 
     const handleTimelinePan = (e) => {
@@ -78,19 +80,24 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
             // Calculate cursor position relative to container
             const rect = container.getBoundingClientRect();
             const offsetX = e.clientX - rect.left;
+            const containerWidth = rect.width;
+            const centerX = containerWidth / 2;
             const scrollLeft = container.scrollLeft;
 
             const x = scrollLeft + offsetX;
             const msFromStart = (x / zoom) * (1000 * 60 * 60 * 24);
             const dateUnderCursor = new Date(minDate.getTime() + msFromStart);
 
+            // Lerp cursor toward center: each zoom step moves the anchor 20% closer to center
+            const lerpedOffsetX = offsetX + (centerX - offsetX) * 0.2;
+
             zoomFocusRef.current = {
                 date: dateUnderCursor,
-                offsetX: offsetX
+                offsetX: lerpedOffsetX
             };
 
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
-            const newZoom = Math.max(0.05, Math.min(500, zoom * delta));
+            const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * delta));
             onZoomChange(newZoom);
         };
 
@@ -133,88 +140,39 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
             const event = events.find(ev => ev.id === interaction.eventId);
             if (!event) return;
 
-            // Move / Vertical Drag logic
+            // Move — vertical only (reorder rows, no date changes)
             if (interaction.type === 'move') {
-                const daysDelta = deltaX / pixelsPerDay;
-                const msDelta = daysDelta * 24 * 60 * 60 * 1000;
                 let newOrder;
-                let newStart = new Date(interaction.originalStart.getTime() + msDelta);
-                let newEnd = new Date(interaction.originalEnd.getTime() + msDelta);
                 let currentValid = true;
+                const newStart = new Date(interaction.originalStart);
+                const newEnd = new Date(interaction.originalEnd);
 
-                // Clamping for Children logic (Constraint)
-                if (!event.isMilestone && event.parentId) {
-                    const parent = events.find(e => e.id === event.parentId);
-                    if (parent) {
-                        const duration = newEnd.getTime() - newStart.getTime();
-                        if (newStart < parent.start) {
-                            newStart = new Date(parent.start);
-                            newEnd = new Date(parent.start.getTime() + duration);
-                        }
-                        if (newEnd > parent.end) {
-                            newEnd = new Date(parent.end);
-                            newStart = new Date(parent.end.getTime() - duration);
-                        }
-                    }
-                }
+                // Calculate Order (Row Index) from vertical drag
+                const ROW_HEIGHT = (event.isParent ? 44 : (isCompact ? 28 : 44));
+                const orderDelta = Math.round(deltaY / ROW_HEIGHT);
+                newOrder = Math.max(0, (interaction.originalOrder || 0) + orderDelta);
 
-                // Calculate Order (Row Index)
-                if (event.isMilestone) {
-                    const ROW_HEIGHT = isCompact ? 28 : 44;
-                    const orderDelta = Math.round(deltaY / ROW_HEIGHT);
-                    newOrder = Math.max(0, (interaction.originalOrder || 0) + orderDelta);
+                // COLLISION CHECK (non-milestone, non-epoch)
+                if (!event.isMilestone && !event.isParent && layout && layout.eventRows) {
+                    const getTrackId = (ev) => {
+                        if (ev.isParent) return 'epoch';
+                        if (ev.isMilestone) return 'milestone';
+                        if (ev.type === 'event') return 'event';
+                        if (ev.type === 'stage') return 'stage';
+                        return 'stage';
+                    };
+                    const myTrack = getTrackId(event);
 
-                    // Horizontal constraints
-                    const parentSub = events.find(e => e.id === event.parentId);
-                    if (parentSub) {
-                        if (newStart < parentSub.start) { newStart = new Date(parentSub.start); newEnd = new Date(parentSub.start); }
-                        if (newStart > parentSub.end) { newStart = new Date(parentSub.end); newEnd = new Date(parentSub.end); }
-                    }
-                } else {
-                    // Manual Vertical Drag
-                    if (event.isParent) {
-                        const ROW_HEIGHT = 44;
-                        const orderDelta = Math.round(deltaY / ROW_HEIGHT);
-                        newOrder = Math.max(0, (interaction.originalOrder || 0) + orderDelta);
-                    } else {
-                        const ROW_HEIGHT = isCompact ? 28 : 44;
-                        const orderDelta = Math.round(deltaY / ROW_HEIGHT);
-                        newOrder = Math.max(0, (interaction.originalOrder || 0) + orderDelta);
-                    }
+                    const overlapping = events.some(e => {
+                        if (e.id === event.id) return false;
+                        if (e.isMilestone || e.isParent) return false;
+                        if (getTrackId(e) !== myTrack) return false;
+                        const eRow = layout.eventRows[e.id];
+                        if (eRow !== newOrder) return false;
+                        return (Math.max(newStart.getTime(), e.start.getTime()) < Math.min(newEnd.getTime(), e.end.getTime()));
+                    });
 
-                    // COLLISION CHECK
-                    if (layout && layout.eventRows) {
-                        // Helper to check track ID
-                        const getTrackId = (ev) => {
-                            if (ev.isParent) return 'epoch';
-                            if (ev.isMilestone) return 'milestone';
-                            if (ev.type === 'event') return 'event';
-                            if (ev.type === 'stage') return 'stage';
-                            return 'stage';
-                        };
-                        const myTrack = getTrackId(event);
-
-                        // Check against other events in the target 'newOrder' row
-                        const overlapping = events.some(e => {
-                            if (e.id === event.id) return false;
-                            if (e.isMilestone || e.isParent) return false;
-
-                            // 0. Same Track?
-                            if (getTrackId(e) !== myTrack) return false;
-
-                            // 1. Same Row?
-                            const eRow = layout.eventRows[e.id];
-                            if (eRow !== newOrder) return false;
-
-                            // 2. Overlap Time?
-                            const overlap = (Math.max(newStart.getTime(), e.start.getTime()) < Math.min(newEnd.getTime(), e.end.getTime()));
-                            return overlap;
-                        });
-
-                        if (overlapping) {
-                            currentValid = false;
-                        }
-                    }
+                    if (overlapping) currentValid = false;
                 }
 
                 setIsValidDrop(currentValid);
@@ -224,34 +182,6 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
                     end: newEnd,
                     order: newOrder
                 });
-
-            } else if (interaction.type === 'resize-end') {
-                // Resize logic ...
-                const daysDelta = deltaX / pixelsPerDay;
-                const msDelta = daysDelta * 24 * 60 * 60 * 1000;
-                let newEnd = new Date(interaction.originalEnd.getTime() + msDelta);
-
-                // Constraints
-                if (event.parentId) {
-                    const parent = events.find(e => e.id === event.parentId);
-                    if (parent && newEnd > parent.end) newEnd = new Date(parent.end);
-                }
-                if (newEnd > interaction.originalStart) {
-                    setTempEventState({ ...event, end: newEnd });
-                }
-
-            } else if (interaction.type === 'resize-start') {
-                const daysDelta = deltaX / pixelsPerDay;
-                const msDelta = daysDelta * 24 * 60 * 60 * 1000;
-                let newStart = new Date(interaction.originalStart.getTime() + msDelta);
-
-                if (event.parentId) {
-                    const parent = events.find(e => e.id === event.parentId);
-                    if (parent && newStart < parent.start) newStart = new Date(parent.start);
-                }
-                if (newStart < interaction.originalEnd) {
-                    setTempEventState({ ...event, start: newStart });
-                }
             }
         };
 
@@ -277,53 +207,9 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
                     return;
                 }
 
-                // COMMIT if Valid
+                // COMMIT if Valid (vertical reorder only, no date changes)
                 if (isValidDrop) {
-                    const originalEvent = events.find(e => e.id === tempEventState.id);
-
-                    // Check if it was a move operation (start changed)
-                    if (originalEvent && originalEvent.start.getTime() !== tempEventState.start.getTime()) {
-                        const timeDiff = tempEventState.start.getTime() - originalEvent.start.getTime();
-
-                        // Recursive function to find all descendants
-                        const getAllDescendants = (parentId) => {
-                            const directChildren = events.filter(e => e.parentId === parentId);
-                            let allDescendants = [...directChildren];
-                            directChildren.forEach(child => {
-                                allDescendants = [...allDescendants, ...getAllDescendants(child.id)];
-                            });
-                            return allDescendants;
-                        };
-
-                        const descendants = getAllDescendants(tempEventState.id);
-
-                        if (descendants.length > 0) {
-                            const descendantIds = new Set(descendants.map(d => d.id));
-
-                            const finalEvents = events.map(e => {
-                                // Update the moved event itself
-                                if (e.id === tempEventState.id) return tempEventState;
-
-                                // Update descendants (including milestones)
-                                if (descendantIds.has(e.id)) {
-                                    const newStart = new Date(e.start.getTime() + timeDiff);
-                                    const newEnd = new Date(e.end.getTime() + timeDiff);
-                                    return { ...e, start: newStart, end: newEnd };
-                                }
-                                return e;
-                            });
-
-                            onUpdateEvent(tempEventState, { cascade: false }, finalEvents);
-                        } else {
-                            onUpdateEvent(tempEventState, { cascade: false });
-                        }
-                    } else {
-                        onUpdateEvent(tempEventState, { cascade: false });
-                    }
-                } else {
-                    // Not valid -> Snap back / Cancel
-                    // We just don't call onUpdateEvent, state resets to original
-                    console.log("Invalid drop - Collision detected");
+                    onUpdateEvent(tempEventState, { cascade: false });
                 }
             }
 

@@ -1,13 +1,73 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Calendar, Type, Trash2, Check, Map as MapIcon, Search, Plus } from 'lucide-react';
-import { formatDate } from '../utils';
+import { getDateParts, createDateFromParts } from '../utils';
 import { LocationPicker } from './LocationPicker';
 
+// Custom date input component that supports negative years
+const DateInput = ({ value, onChange, label }) => {
+    // value is { year, month, day }
+    const months = [
+        { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' },
+        { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
+        { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
+        { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' }
+    ];
+
+    const inputStyle = {
+        background: 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: '4px',
+        color: 'var(--text-primary)',
+        padding: '0.5rem',
+        fontSize: '0.85rem'
+    };
+
+    return (
+        <div>
+            {label && <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>{label}</label>}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={value.day}
+                    onChange={(e) => onChange({ ...value, day: Math.max(1, Math.min(31, parseInt(e.target.value) || 1)) })}
+                    style={{ ...inputStyle, width: '100%' }}
+                    placeholder="Día"
+                />
+                <select
+                    value={value.month}
+                    onChange={(e) => onChange({ ...value, month: parseInt(e.target.value) })}
+                    style={{ ...inputStyle, width: '100%' }}
+                >
+                    {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                <div style={{ position: 'relative' }}>
+                    <input
+                        type="number"
+                        value={value.year}
+                        onChange={(e) => onChange({ ...value, year: parseInt(e.target.value) || 0 })}
+                        style={{ ...inputStyle, width: '100%' }}
+                        placeholder="Año"
+                    />
+                    {value.year < 0 && (
+                        <span style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', color: 'var(--accent-color)', pointerEvents: 'none' }}>a.C.</span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const EventEditor = ({ event, onSave, onClose, onDelete }) => {
+    const backdropRef = useRef(false);
+    const startParts = getDateParts(event.start);
+    const endParts = getDateParts(event.end);
+
     const [formData, setFormData] = useState({
         ...event,
-        start: formatDate(event.start),
-        end: formatDate(event.end),
+        startParts,
+        endParts,
         geo: event.geo || { lat: '', lng: '', name: '' }
     });
 
@@ -18,10 +78,14 @@ export const EventEditor = ({ event, onSave, onClose, onDelete }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        const start = createDateFromParts(formData.startParts.year, formData.startParts.month, formData.startParts.day);
+        const end = createDateFromParts(formData.endParts.year, formData.endParts.month, formData.endParts.day);
         onSave({
             ...formData,
-            start: new Date(formData.start),
-            end: new Date(formData.end)
+            start,
+            end,
+            startParts: undefined,
+            endParts: undefined
         });
     };
 
@@ -58,10 +122,11 @@ export const EventEditor = ({ event, onSave, onClose, onDelete }) => {
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 100
-        }} onClick={onClose}>
+        }} onMouseDown={() => { backdropRef.current = true; }} onClick={() => { if (backdropRef.current) onClose(); }}>
             <div
                 className="glass-panel"
-                style={{ width: '500px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column' }}
+                style={{ width: '700px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column' }}
+                onMouseDown={(e) => { e.stopPropagation(); backdropRef.current = false; }}
                 onClick={e => e.stopPropagation()}
             >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
@@ -88,47 +153,23 @@ export const EventEditor = ({ event, onSave, onClose, onDelete }) => {
                     </div>
 
                     {formData.isMilestone ? (
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Fecha</label>
-                            <div style={{ position: 'relative' }}>
-                                <input
-                                    type="date"
-                                    name="start"
-                                    value={formData.start}
-                                    onChange={(e) => {
-                                        const date = e.target.value;
-                                        setFormData({ ...formData, start: date, end: date });
-                                    }}
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
-                        </div>
+                        <DateInput
+                            label="Fecha"
+                            value={formData.startParts}
+                            onChange={(parts) => setFormData({ ...formData, startParts: parts, endParts: parts })}
+                        />
                     ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Inicio</label>
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        type="date"
-                                        name="start"
-                                        value={formData.start}
-                                        onChange={handleChange}
-                                        style={{ width: '100%' }}
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Fin</label>
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        type="date"
-                                        name="end"
-                                        value={formData.end}
-                                        onChange={handleChange}
-                                        style={{ width: '100%' }}
-                                    />
-                                </div>
-                            </div>
+                            <DateInput
+                                label="Inicio"
+                                value={formData.startParts}
+                                onChange={(parts) => setFormData({ ...formData, startParts: parts })}
+                            />
+                            <DateInput
+                                label="Fin"
+                                value={formData.endParts}
+                                onChange={(parts) => setFormData({ ...formData, endParts: parts })}
+                            />
                         </div>
                     )}
 

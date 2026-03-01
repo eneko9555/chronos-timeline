@@ -1,30 +1,44 @@
 import React from 'react';
 import { ZoomIn, ZoomOut, Download, Loader2 } from 'lucide-react';
+import { MIN_ZOOM, MAX_ZOOM, formatZoomLabel } from '../utils';
+
+// Logarithmic mapping: slider 0-100 <-> MIN_ZOOM..MAX_ZOOM exponentially
+const logMin = Math.log(MIN_ZOOM);
+const logMax = Math.log(MAX_ZOOM);
+
+const zoomToSlider = (zoom) => {
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+    return ((Math.log(clamped) - logMin) / (logMax - logMin)) * 100;
+};
+
+const sliderToZoom = (val) => {
+    return Math.exp(logMin + (val / 100) * (logMax - logMin));
+};
 
 export const Controls = ({ zoom, setZoom, onExport, isExporting, exportProgress }) => {
     const handleZoomChange = (newZoom) => {
-        const clampedZoom = Math.max(0.1, Math.min(1000, newZoom));
+        const clampedZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
         setZoom(clampedZoom);
     };
 
     return (
         <div className="controls" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
-            <button onClick={() => handleZoomChange(zoom / 1.2)} className="btn-secondary" style={{ padding: '0.25rem' }}>
+            <button onClick={() => handleZoomChange(zoom / 1.5)} className="btn-secondary" style={{ padding: '0.25rem' }}>
                 <ZoomOut size={16} />
             </button>
             <input
                 type="range"
-                min="0.1"
-                max="1000"
+                min="0"
+                max="100"
                 step="0.1"
-                value={zoom}
-                onChange={(e) => handleZoomChange(Number(e.target.value))}
+                value={zoomToSlider(zoom)}
+                onChange={(e) => handleZoomChange(sliderToZoom(Number(e.target.value)))}
                 style={{ width: '120px' }}
             />
-            <span style={{ fontSize: '0.75rem', minWidth: '60px', textAlign: 'center' }}>
-                {zoom.toFixed(1)}px/día
+            <span style={{ fontSize: '0.75rem', minWidth: '80px', textAlign: 'center' }}>
+                {formatZoomLabel(zoom)}
             </span>
-            <button onClick={() => handleZoomChange(zoom * 1.2)} className="btn-secondary" style={{ padding: '0.25rem' }}>
+            <button onClick={() => handleZoomChange(zoom * 1.5)} className="btn-secondary" style={{ padding: '0.25rem' }}>
                 <ZoomIn size={16} />
             </button>
 

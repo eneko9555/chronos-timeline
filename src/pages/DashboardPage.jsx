@@ -2,15 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
 import { useNavigate } from 'react-router-dom';
-import { Plus, LogOut, Clock, Trash2, Edit2, User } from 'lucide-react';
+import { Plus, LogOut, Clock, Trash2, Edit2, User, Upload } from 'lucide-react';
 import { TimelineCreateModal } from '../components/TimelineCreateModal';
 import { TimelineEditModal } from '../components/TimelineEditModal';
+import { ImportExcelModal } from '../components/ImportExcelModal';
 
 export const DashboardPage = () => {
     const { currentUser, token, logout } = useAuth();
     const [timelines, setTimelines] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [editingTimeline, setEditingTimeline] = useState(null);
+    const [showImportModal, setShowImportModal] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -65,6 +67,24 @@ export const DashboardPage = () => {
         } catch (error) {
             console.error("Error updating timeline", error);
             alert("Error al actualizar el timeline");
+        }
+    };
+
+    const handleImportExcel = async (events, mode, timelineName) => {
+        try {
+            const newTimeline = await apiClient.createTimeline(token, timelineName);
+            if (newTimeline.error) {
+                alert(newTimeline.error);
+                return;
+            }
+            await apiClient.saveTimeline(token, newTimeline.id, events, {
+                identifier: timelineName
+            });
+            setShowImportModal(false);
+            navigate(`/timeline/${newTimeline.id}`);
+        } catch (error) {
+            console.error('Error importing Excel:', error);
+            alert('Error al importar el Excel. Revisa la consola.');
         }
     };
 
@@ -132,6 +152,27 @@ export const DashboardPage = () => {
                         <Plus size={32} color="white" />
                     </div>
                     <span style={{ fontWeight: 600 }}>Crear Nueva Línea de Tiempo</span>
+                </div>
+
+                {/* Import from Excel Card */}
+                <div
+                    onClick={() => setShowImportModal(true)}
+                    className="glass-panel"
+                    style={{
+                        height: '280px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        border: '2px dashed #334155',
+                        background: 'rgba(30, 41, 59, 0.3)'
+                    }}
+                >
+                    <div style={{ background: '#10b981', borderRadius: '50%', padding: '1rem', marginBottom: '1rem' }}>
+                        <Upload size={32} color="white" />
+                    </div>
+                    <span style={{ fontWeight: 600 }}>Importar desde Excel</span>
                 </div>
 
                 {/* Timeline Cards */}
@@ -252,6 +293,13 @@ export const DashboardPage = () => {
                     timeline={editingTimeline}
                     onClose={() => setEditingTimeline(null)}
                     onUpdate={handleUpdate}
+                />
+            )}
+
+            {showImportModal && (
+                <ImportExcelModal
+                    onImport={handleImportExcel}
+                    onClose={() => setShowImportModal(false)}
                 />
             )}
         </div>

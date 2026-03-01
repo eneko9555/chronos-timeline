@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { differenceInDays, format, eachDayOfInterval, eachMonthOfInterval, eachYearOfInterval } from 'date-fns';
-import { motion } from 'framer-motion';
-import { PlusCircle, Edit2, Diamond, Tag, Image } from 'lucide-react';
+import { differenceInDays } from 'date-fns';
+import { motion, AnimatePresence } from 'framer-motion';
+import { RadialMenu } from './RadialMenu';
 import { EventEditor } from './EventEditor';
 import { EventViewer } from './EventViewer';
 import { useTimelineLayout } from './timeline/useTimelineLayout';
@@ -9,9 +9,11 @@ import { useTimelineInteractions } from './timeline/useTimelineInteractions';
 import { TimelineSidebar } from './timeline/TimelineSidebar';
 import { TimelineAxis } from './timeline/TimelineAxis';
 import { TimelineGrid } from './timeline/TimelineGrid';
+import { formatYearLabel, createDateFromParts, getDateParts } from '../utils';
 
-export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onDeleteEvent, onAddSubEvent, onAddMilestone, onZoomChange, onScroll, minDateOverride, totalDaysOverride, editingEvent, setEditingEvent, focusedEventId, setViewingEvent, renderAll = false }, ref) => {
+export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onDeleteEvent, onAddSubEvent, onAddMilestone, onZoomChange, onScroll, minDateOverride, totalDaysOverride, editingEvent, setEditingEvent, onSaveEditingEvent, focusedEventId, setViewingEvent, renderAll = false }, ref) => {
     const [selectedEventId, setSelectedEventId] = useState(null);
+    const [contextMenu, setContextMenu] = useState(null);
 
     // Virtualization State
     const [scrollLeft, setScrollLeft] = useState(0);
@@ -157,6 +159,9 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
     }));
 
     // 4. Generate Time Labels (Shared by Grid and Axis)
+    // Manual generators that support negative years and extreme zoom ranges
+    const MONTH_NAMES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
     const timeLabels = useMemo(() => {
         const labels = [];
         const pixelsPerDay = zoom;
@@ -168,52 +173,79 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
             visibleMinDate = minDate;
             visibleMaxDate = maxDate;
         } else {
-            const PADDING_PX = 1000; // Buffer visual
+            const PADDING_PX = 1000;
             const startPx = Math.max(0, scrollLeft - PADDING_PX);
             const endPx = scrollLeft + viewportWidth + PADDING_PX;
 
-            // Convertir pixeles a días desde minDate
             const startDays = startPx / pixelsPerDay;
             const endDays = endPx / pixelsPerDay;
 
-            // Calcular fechas inicio/fin visibles
-            // Clamp to global min/max
-            visibleMinDate = new Date(Math.min(maxDate.getTime(), Math.max(minDate.getTime(), minDate.getTime() + startDays * 24 * 60 * 60 * 1000)));
-            visibleMaxDate = new Date(Math.max(minDate.getTime(), Math.min(maxDate.getTime(), minDate.getTime() + endDays * 24 * 60 * 60 * 1000)));
+            visibleMinDate = new Date(Math.min(maxDate.getTime(), Math.max(minDate.getTime(), minDate.getTime() + startDays * 86400000)));
+            visibleMaxDate = new Date(Math.max(minDate.getTime(), Math.min(maxDate.getTime(), minDate.getTime() + endDays * 86400000)));
         }
 
-        // Asegurar que no sea inválido
         if (visibleMinDate >= visibleMaxDate) return [];
 
         if (pixelsPerDay >= 80) {
-            eachDayOfInterval({ start: visibleMinDate, end: visibleMaxDate }).forEach((day, index) => {
-                if (index % Math.max(1, Math.floor(80 / pixelsPerDay)) === 0) {
-                    labels.push({ date: day, x: getX(day), label: format(day, 'd MMM'), type: 'day' });
+            // Day-level labels
+            const d = new Date(visibleMinDate);
+            d.setHours(0, 0, 0, 0);
+            const step = Math.max(1, Math.floor(80 / pixelsPerDay));
+            let count = 0;
+            while (d <= visibleMaxDate) {
+                if (count % step === 0) {
+                    const label = `${d.getDate()} ${MONTH_NAMES_SHORT[d.getMonth()]}`;
+                    labels.push({ date: new Date(d), x: getX(d), label, type: 'day' });
                 }
-            });
-        } else if (pixelsPerDay >= 20) {
-            eachDayOfInterval({ start: visibleMinDate, end: visibleMaxDate })
-                .filter((_, i) => i % 7 === 0)
-                .forEach(week => {
-                    labels.push({ date: week, x: getX(week), label: format(week, 'd MMM'), type: 'week' });
-                });
+                d.setDate(d.getDate() + 1);
+                count++;
+                if (labels.length > 2000) break;
+            }
         } else if (pixelsPerDay >= 2) {
-            eachMonthOfInterval({ start: visibleMinDate, end: visibleMaxDate }).forEach(month => {
-                labels.push({ date: month, x: getX(month), label: format(month, 'MMM yyyy'), type: 'month' });
-            });
-        } else {
-            const years = eachYearOfInterval({ start: visibleMinDate, end: visibleMaxDate });
-            const yearWidth = pixelsPerDay * 365;
-            let interval = 1;
-            if (yearWidth < 10) interval = 25;
-            else if (yearWidth < 20) interval = 10;
-            else if (yearWidth < 40) interval = 5;
-
-            years.forEach(year => {
-                if (year.getFullYear() % interval === 0) {
-                    labels.push({ date: year, x: getX(year), label: format(year, 'yyyy'), type: 'year' });
+            // Month-level labels
+            const parts = getDateParts(visibleMinDate);
+            const d = createDateFromParts(parts.year, parts.month, 1);
+            while (d <= visibleMaxDate) {
+                const yr = d.getFullYear();
+                const label = `${MONTH_NAMES_SHORT[d.getMonth()]} ${formatYearLabel(yr)}`;
+                labels.push({ date: new Date(d), x: getX(d), label, type: 'month' });
+                // Advance one month
+                const m = d.getMonth();
+                if (m === 11) {
+                    d.setFullYear(d.getFullYear() + 1);
+                    d.setMonth(0);
+                } else {
+                    d.setMonth(m + 1);
                 }
-            });
+                if (labels.length > 2000) break;
+            }
+        } else {
+            // Year-level labels — pick interval based on density
+            const yearWidthPx = pixelsPerDay * 365.25;
+            let interval = 1;
+            if (yearWidthPx < 0.5) interval = 1000;
+            else if (yearWidthPx < 1) interval = 500;
+            else if (yearWidthPx < 2) interval = 250;
+            else if (yearWidthPx < 5) interval = 100;
+            else if (yearWidthPx < 10) interval = 50;
+            else if (yearWidthPx < 20) interval = 25;
+            else if (yearWidthPx < 40) interval = 10;
+            else if (yearWidthPx < 80) interval = 5;
+            else if (yearWidthPx < 160) interval = 2;
+
+            const startYear = visibleMinDate.getFullYear();
+            const endYear = visibleMaxDate.getFullYear();
+            // Align to interval
+            let yr = Math.floor(startYear / interval) * interval;
+
+            while (yr <= endYear + interval) {
+                const d = createDateFromParts(yr, 1, 1);
+                if (d >= visibleMinDate && d <= visibleMaxDate) {
+                    labels.push({ date: d, x: getX(d), label: formatYearLabel(yr), type: 'year' });
+                }
+                yr += interval;
+                if (labels.length > 2000) break;
+            }
         }
         return labels;
     }, [minDate, maxDate, zoom, scrollLeft, viewportWidth, renderAll]);
@@ -231,6 +263,12 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
         if (!relatedIds) return 1;
         return relatedIds.has(id) ? 1 : 0.2; // Dim unrelated items
     };
+
+    // Total content height (sum of all tracks + gaps + axis offset)
+    const totalHeight = useMemo(() => {
+        const lastTrack = tracks[tracks.length - 1];
+        return getTrackY(lastTrack.id) + getTrackHeight(lastTrack.id);
+    }, [tracks, getTrackY, getTrackHeight]);
 
     // VIRTUALIZATION: Filter events that are visible
     const visibleEvents = useMemo(() => {
@@ -311,12 +349,12 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
 
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-                {/* 2. SCROLLABLE AREA (Handles X and Y) */}
+                {/* SCROLLABLE AREA (Handles X and Y) */}
                 <div
                     ref={containerRef}
                     style={{
                         flex: 1,
-                        overflow: 'auto', // Allow both X and Y scrolling
+                        overflow: 'auto',
                         position: 'relative',
                         outline: 'none'
                     }}
@@ -325,10 +363,10 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                 >
                     <div style={{ display: 'flex', minWidth: '100%', width: 'max-content', position: 'relative' }}>
 
-                        {/* 1. SIDEBAR (Sticky Left) */}
+                        {/* SIDEBAR (Sticky Left — scrolls vertically, fixed horizontally) */}
                         <TimelineSidebar tracks={tracks} getTrackHeight={getTrackHeight} trackGap={TRACK_GAP} />
 
-                        <div style={{ width: totalWidth, minHeight: '100%', position: 'relative' }}>
+                        <div style={{ width: totalWidth, height: totalHeight, minHeight: '100%', position: 'relative' }}>
 
                             {/* 3. GRID */}
                             <TimelineGrid
@@ -398,6 +436,8 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                     const opacity = relatedIds ? (isRelated ? 0.6 : 0.1) : 0.6;
 
 
+                                    const childX = startX + (event.isMilestone ? 0 : 1);
+
                                     return (
                                         <g
                                             key={`conn-${event.id}`}
@@ -408,24 +448,23 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                             }}
                                         >
                                             <line
-                                                x1={startX + (event.isMilestone ? 0 : 1)}
+                                                x1={childX}
                                                 y1={childY}
-                                                x2={startX + (event.isMilestone ? 0 : 1)}
+                                                x2={childX}
                                                 y2={parentBottomY}
                                                 stroke={parent.color || '#ccc'}
-                                                strokeWidth="4"
-                                                strokeDasharray="4 2"
+                                                strokeWidth="1.5"
+                                                strokeDasharray="4 3"
                                             />
-                                            {/* Invisible wider line for easier clicking */}
                                             <line
-                                                x1={startX + (event.isMilestone ? 0 : 1)}
+                                                x1={childX}
                                                 y1={childY}
-                                                x2={startX + (event.isMilestone ? 0 : 1)}
+                                                x2={childX}
                                                 y2={parentBottomY}
                                                 stroke="transparent"
                                                 strokeWidth="10"
                                             />
-                                            <circle cx={startX} cy={parentBottomY} r="2" fill={parent.color || '#ccc'} />
+                                            <circle cx={childX} cy={parentBottomY} r="2" fill={parent.color || '#ccc'} />
                                         </g>
                                     );
                                 })}
@@ -464,6 +503,11 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                             key={event.id}
                                             data-event-element="true"
                                             onPointerDown={(e) => handlePointerDown(e, event, 'move')}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setContextMenu({ x: e.clientX, y: e.clientY, event });
+                                            }}
                                             style={{
                                                 position: 'absolute',
                                                 top: `${eventY}px`,
@@ -513,31 +557,6 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                             />
                                                         ) : (
                                                             event.title ? event.title.charAt(0).toUpperCase() : ''
-                                                        )}
-                                                        {hoveredMilestoneId === event.id && (
-                                                            <button
-                                                                onPointerDown={(e) => e.stopPropagation()}
-                                                                onClick={(e) => { e.stopPropagation(); setEditingEvent(event); }}
-                                                                style={{
-                                                                    position: 'absolute',
-                                                                    top: '-15px',
-                                                                    right: '-15px',
-                                                                    background: 'white',
-                                                                    border: '1px solid var(--border-primary)',
-                                                                    borderRadius: '50%',
-                                                                    width: '20px',
-                                                                    height: '20px',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    cursor: 'pointer',
-                                                                    color: '#333',
-                                                                    boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-                                                                    zIndex: 100
-                                                                }}
-                                                            >
-                                                                <Edit2 size={10} />
-                                                            </button>
                                                         )}
                                                     </motion.div>
                                                 </div>
@@ -597,69 +616,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                         </span>
                                                     )}
 
-                                                    <div
-                                                        data-event-element="true"
-                                                        onPointerDown={(e) => handlePointerDown(e, event, 'resize-start')}
-                                                        style={{
-                                                            position: 'absolute',
-                                                            left: 0, top: '20%', bottom: '20%', width: '10px',
-                                                            cursor: 'ew-resize',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            zIndex: 3
-                                                        }}
-                                                    >
-                                                        <div style={{ width: '3px', height: '100%', background: 'rgba(255,255,255,0.4)', borderRadius: '4px' }} />
-                                                    </div>
-                                                    <div
-                                                        data-event-element="true"
-                                                        onPointerDown={(e) => handlePointerDown(e, event, 'resize-end')}
-                                                        style={{
-                                                            position: 'absolute',
-                                                            right: 0, top: '20%', bottom: '20%', width: '10px',
-                                                            cursor: 'ew-resize',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            zIndex: 3
-                                                        }}
-                                                    >
-                                                        <div style={{ width: '3px', height: '100%', background: 'rgba(255,255,255,0.4)', borderRadius: '4px' }} />
-                                                    </div>
 
-                                                    {/* Action Buttons */}
-                                                    {!isCompact && !isMilestone && Math.max(getX(display.end) - getX(display.start), 2) > 50 && (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
-                                                            {(isEpoch || trackId === 'stage') && (
-                                                                <button
-                                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                                    onClick={(e) => { e.stopPropagation(); onAddSubEvent(event.id, isEpoch ? 'stage' : 'event'); }}
-                                                                    title={isEpoch ? "Añadir Etapa" : "Añadir Suceso"}
-                                                                    style={{ all: 'unset', cursor: 'pointer', opacity: 0.8 }}
-                                                                >
-                                                                    <PlusCircle size={15} />
-                                                                </button>
-                                                            )}
-                                                            {(trackId === 'stage' || trackId === 'event') && (
-                                                                <button
-                                                                    onPointerDown={(e) => e.stopPropagation()}
-                                                                    onClick={(e) => { e.stopPropagation(); onAddMilestone(event.id); }}
-                                                                    title="Añadir Hito"
-                                                                    style={{ all: 'unset', cursor: 'pointer', opacity: 0.8 }}
-                                                                >
-                                                                    <Diamond size={15} />
-                                                                </button>
-                                                            )}
-                                                            <button
-                                                                onPointerDown={(e) => e.stopPropagation()}
-                                                                onClick={(e) => { e.stopPropagation(); setEditingEvent(event); }}
-                                                                style={{ all: 'unset', cursor: 'pointer', opacity: 0.8 }}
-                                                            >
-                                                                <Edit2 size={15} />
-                                                            </button>
-                                                        </div>
-                                                    )}
                                                 </motion.div>
                                             )}
                                         </div>
@@ -673,11 +630,33 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                 {editingEvent && (
                     <EventEditor
                         event={editingEvent}
-                        onSave={(e) => { onUpdateEvent(e, { cascade: false }); setEditingEvent(null); }}
+                        onSave={(e) => { onSaveEditingEvent(e); setEditingEvent(null); }}
                         onClose={() => setEditingEvent(null)}
-                        onDelete={() => { onDeleteEvent(editingEvent.id); setEditingEvent(null); }}
+                        onDelete={() => {
+                            const exists = events.some(ev => ev.id === editingEvent.id);
+                            if (exists) onDeleteEvent(editingEvent.id);
+                            setEditingEvent(null);
+                        }}
                     />
                 )}
+
+                <AnimatePresence>
+                    {contextMenu && (
+                        <RadialMenu
+                            x={contextMenu.x}
+                            y={contextMenu.y}
+                            event={contextMenu.event}
+                            onClose={() => setContextMenu(null)}
+                            actions={{
+                                onEdit: (ev) => setEditingEvent(ev),
+                                onViewInfo: (ev) => setViewingEvent(ev),
+                                onAddSubEvent: (parentId, type) => onAddSubEvent(parentId, type),
+                                onAddMilestone: (parentId) => onAddMilestone(parentId),
+                                onDelete: (ev) => onDeleteEvent(ev.id)
+                            }}
+                        />
+                    )}
+                </AnimatePresence>
 
             </div>
         </div >

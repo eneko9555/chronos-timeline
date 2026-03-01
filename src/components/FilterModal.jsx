@@ -29,18 +29,21 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
     };
 
     return (
-        <div style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.7)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 3000,
-            animation: 'fadeIn 0.2s ease-out'
-        }}>
-            <div style={{
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.7)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 3000,
+                animation: 'fadeIn 0.2s ease-out'
+            }}
+        >
+            <div onClick={(e) => e.stopPropagation()} style={{
                 background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-primary)',
                 borderRadius: '20px',

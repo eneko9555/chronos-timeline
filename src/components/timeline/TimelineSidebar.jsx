@@ -7,12 +7,12 @@ export const TimelineSidebar = ({ tracks, getTrackHeight, trackGap }) => {
             flexShrink: 0,
             background: 'var(--bg-secondary)',
             borderRight: '1px solid var(--border-primary)',
-            position: 'sticky', // STICKY!
+            position: 'sticky',
             left: 0,
-            zIndex: 30, // Above everything
+            zIndex: 30,
             display: 'flex',
             flexDirection: 'column',
-            marginTop: '40px' // Offset for the top axis (which is 40px height usually)
+            marginTop: '40px'
         }}>
             {tracks.map((track) => (
                 <div key={track.id} style={{

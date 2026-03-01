@@ -2,16 +2,15 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { differenceInDays } from 'date-fns';
 import { Timeline } from '../components/Timeline';
-import { Controls } from '../components/Controls';
 import { EventViewer } from '../components/EventViewer';
-import { createEvent } from '../utils';
-import { Plus, ArrowLeft, Save, GitCompare, X, Maximize, Minimize, Play, Pause, Clock, SlidersHorizontal, Map as MapIcon } from 'lucide-react';
+import { createEvent, MIN_ZOOM, MAX_ZOOM } from '../utils';
+import { Plus, ArrowLeft, Save, GitCompare, X, Maximize, Minimize, Clock, SlidersHorizontal, Download, Loader2 } from 'lucide-react';
 import { ComparisonModal } from '../components/ComparisonModal';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
 import debounce from 'lodash.debounce';
-import { PlaybackSettingsModal } from '../components/PlaybackSettingsModal';
 import { FilterModal } from '../components/FilterModal';
+import { EventTreePanel } from '../components/EventTreePanel';
 import { MapViewer } from '../components/MapViewer';
 import { THEMES } from '../constants/themes';
 import { useTimelineExport } from '../components/timeline/useTimelineExport';
@@ -40,7 +39,6 @@ export const TimelinePage = () => {
     const [showComparisonModal, setShowComparisonModal] = useState(false);
     const [activeFilters, setActiveFilters] = useState(new Set(['epoch', 'stage', 'event', 'milestone']));
     const [showFilterModal, setShowFilterModal] = useState(false);
-    const [showPlaybackModal, setShowPlaybackModal] = useState(false);
     const [comparisonTimeline, setComparisonTimeline] = useState(null); // { id, name, description, coverImage, themeId, events }
     const [lastSavedComparisonRef, setLastSavedComparisonRef] = useState(null);
     const [isComparing, setIsComparing] = useState(false);
@@ -48,10 +46,14 @@ export const TimelinePage = () => {
     const [showExportModal, setShowExportModal] = useState(false);
     const [selectedTags, setSelectedTags] = useState(new Set());
     const [selectedLocations, setSelectedLocations] = useState(new Set());
+    const [hiddenEventIds, setHiddenEventIds] = useState(new Set());
+    const [showTreePanel, setShowTreePanel] = useState(false);
 
     // Filtered Events helper
     const getFilteredList = (list) => {
         return list.filter(e => {
+            if (hiddenEventIds.has(e.id)) return false;
+
             let type = 'stage';
             if (e.isParent) type = 'epoch';
             else if (e.isMilestone) type = 'milestone';
@@ -65,8 +67,34 @@ export const TimelinePage = () => {
         });
     };
 
-    const filteredEvents = useMemo(() => getFilteredList(events), [events, activeFilters, selectedTags, selectedLocations]);
-    const filteredComparisonEvents = useMemo(() => getFilteredList(comparisonTimeline?.events || []), [comparisonTimeline, activeFilters, selectedTags, selectedLocations]);
+    const filteredEvents = useMemo(() => getFilteredList(events), [events, activeFilters, selectedTags, selectedLocations, hiddenEventIds]);
+    const filteredComparisonEvents = useMemo(() => getFilteredList(comparisonTimeline?.events || []), [comparisonTimeline, activeFilters, selectedTags, selectedLocations, hiddenEventIds]);
+
+    // Toggle visibility for tree panel
+    const handleToggleEventVisibility = useCallback((eventId) => {
+        setHiddenEventIds(prev => {
+            const next = new Set(prev);
+            const descendants = getDescendantIdsHelper(eventId, events);
+            const allIds = [eventId, ...descendants];
+
+            if (next.has(eventId)) {
+                allIds.forEach(id => next.delete(id));
+            } else {
+                allIds.forEach(id => next.add(id));
+            }
+            return next;
+        });
+    }, [events]);
+
+    // Helper for descendant lookup (used by tree panel toggle)
+    const getDescendantIdsHelper = (parentId, allEvents) => {
+        const children = allEvents.filter(e => e.parentId === parentId);
+        let ids = children.map(c => c.id);
+        children.forEach(child => {
+            ids = [...ids, ...getDescendantIdsHelper(child.id, allEvents)];
+        });
+        return ids;
+    };
 
     const allTags = useMemo(() => {
         const tags = new Set();
@@ -132,11 +160,6 @@ export const TimelinePage = () => {
         }
     }, [isComparing, commonBounds, zoom]);
 
-    // Cinematic playback
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [focusedEventId, setFocusedEventId] = useState(null);
-    const [playbackRange, setPlaybackRange] = useState(null); // { start, end }
-
     // To prevent saving right after load when nothing changed
     const lastSavedRef = useRef(null);
     const pageRef = useRef(null);
@@ -166,6 +189,21 @@ export const TimelinePage = () => {
                             }));
                             setEvents(loadedEvents);
 
+                            // Fit-to-viewport: calculate ideal zoom from event span
+                            if (loadedEvents.length > 0) {
+                                const starts = loadedEvents.map(e => e.start.getTime());
+                                const ends = loadedEvents.map(e => e.end.getTime());
+                                const minT = Math.min(...starts);
+                                const maxT = Math.max(...ends);
+                                const spanDays = (maxT - minT) / 86400000;
+
+                                if (spanDays > 0) {
+                                    const vw = window.innerWidth * 0.85; // leave padding
+                                    const idealZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, vw / spanDays));
+                                    setZoom(idealZoom);
+                                }
+                            }
+
                             // Initialize lastSavedRef with loaded data
                             const initialState = JSON.stringify({
                                 events: loadedEvents,
@@ -182,6 +220,30 @@ export const TimelinePage = () => {
                 .catch(err => console.error("Failed to load timeline", err));
         }
     }, [token, id]);
+
+    // Center scroll on events after initial load
+    const hasScrolledToFit = useRef(false);
+    useEffect(() => {
+        if (isLoaded && events.length > 0 && !hasScrolledToFit.current && timelineContainerRef.current) {
+            hasScrolledToFit.current = true;
+            // Small delay to ensure the Timeline has rendered with new zoom
+            const timer = setTimeout(() => {
+                const container = timelineContainerRef.current?.container;
+                if (container) {
+                    // Scroll so events start near left edge with some padding
+                    const starts = events.map(e => e.start.getTime());
+                    const minT = Math.min(...starts);
+                    const minDate = timelineContainerRef.current?.minDate;
+                    if (minDate) {
+                        const dayOffset = (minT - minDate.getTime()) / 86400000;
+                        const targetX = dayOffset * zoom;
+                        container.scrollLeft = Math.max(0, targetX - container.offsetWidth * 0.07);
+                    }
+                }
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [isLoaded, events, zoom]);
 
     // Protect against leaving while saving
     useEffect(() => {
@@ -211,48 +273,6 @@ export const TimelinePage = () => {
         ...
     }, [isComparing, comparisonTimeline]);
     */
-
-    // Cinematic Playback Logic
-    useEffect(() => {
-        if (!isPlaying || events.length === 0) {
-            setFocusedEventId(null);
-            setViewingEvent(null);
-            return;
-        }
-
-        // Filter events by range if specified
-        let playbackEvents = [...events];
-        if (playbackRange) {
-            playbackEvents = playbackEvents.filter(e =>
-                e.start >= playbackRange.start && e.start <= playbackRange.end
-            );
-        }
-
-        if (playbackEvents.length === 0) {
-            setIsPlaying(false);
-            return;
-        }
-
-        // Sort events chronologically
-        const sortedEvents = playbackEvents.sort((a, b) => a.start - b.start);
-        let currentIndex = 0;
-
-        const updateSequence = (index) => {
-            const ev = sortedEvents[index];
-            setFocusedEventId(ev.id);
-            setViewingEvent(ev);
-        };
-
-        // Set first event immediately
-        updateSequence(0);
-
-        const interval = setInterval(() => {
-            currentIndex = (currentIndex + 1) % sortedEvents.length;
-            updateSequence(currentIndex);
-        }, 5000); // 5 seconds per event for reading
-
-        return () => clearInterval(interval);
-    }, [isPlaying, events, playbackRange]);
 
     // Apply Theme
     useEffect(() => {
@@ -357,9 +377,9 @@ export const TimelinePage = () => {
 
     const addParentEvent = () => {
         const newEvent = createEvent(true, null, 0, false, 'epoch');
-        setEvents([...events, newEvent]);
         setEditingEvent(newEvent);
     };
+
 
     const addSubEvent = (parentId, type = 'stage') => {
         const parent = events.find(e => e.id === parentId);
@@ -370,9 +390,9 @@ export const TimelinePage = () => {
 
         const sub = createEvent(false, parentId, newOrder, false, type);
         sub.start = new Date(parent.start);
-        sub.end = new Date(parent.end);
+        sub.end = new Date(parent.start);
 
-        setEvents([...events, sub]);
+        setEditingEvent(sub);
     };
 
     const addMilestone = (subEventId) => {
@@ -386,7 +406,16 @@ export const TimelinePage = () => {
         milestone.start = new Date(subEvent.start);
         milestone.end = new Date(subEvent.start);
 
-        setEvents([...events, milestone]);
+        setEditingEvent(milestone);
+    };
+
+    const saveEditingEvent = (updatedEvent) => {
+        const exists = events.some(e => e.id === updatedEvent.id);
+        if (exists) {
+            updateEvent(updatedEvent, { cascade: false });
+        } else {
+            setEvents(prev => [...prev, updatedEvent]);
+        }
     };
 
     // --- Comparison Handlers ---
@@ -538,33 +567,6 @@ export const TimelinePage = () => {
         }
     };
 
-    const togglePlayback = () => {
-        if (!isPlaying) {
-            setShowPlaybackModal(true);
-        } else {
-            setIsPlaying(false);
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
-            }
-        };
-    }
-
-    const startPlayback = (start, end) => {
-        setPlaybackRange({ start, end });
-        setShowPlaybackModal(false);
-        if (isComparing) removeComparison();
-        setIsPlaying(true);
-
-        // Auto-Fullscreen with delay and safety check
-        setTimeout(() => {
-            if (!document.fullscreenElement && pageRef.current) {
-                if (pageRef.current.isConnected) {
-                    pageRef.current.requestFullscreen().catch(err => console.error('Fullscreen error:', err));
-                }
-            }
-        }, 100);
-    };
-
     const handleCompareSelect = (targetId) => {
         if (!token) return;
         apiClient.getTimeline(token, targetId)
@@ -657,21 +659,6 @@ export const TimelinePage = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <button
-                        onClick={togglePlayback}
-                        className="btn-secondary"
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            background: isPlaying ? 'rgba(96, 165, 250, 0.2)' : 'transparent',
-                            borderColor: isPlaying ? 'var(--accent-color)' : 'var(--border-primary)',
-                            color: isPlaying ? 'var(--accent-color)' : 'var(--text-primary)'
-                        }}
-                    >
-                        {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                        {isPlaying ? 'Pausar Presentación' : 'Reproducir'}
-                    </button>
                     {isComparing ? (
                         <button onClick={removeComparison} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: '#ef4444', color: '#ef4444' }}>
                             <X size={18} /> Cerrar Comparación
@@ -689,13 +676,24 @@ export const TimelinePage = () => {
                         {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
                         {isFullscreen ? 'Salir Fullscreen' : 'Ventana Completa'}
                     </button>
-                    <Controls
-                        zoom={zoom}
-                        setZoom={setZoom}
-                        onExport={() => setShowExportModal(true)}
-                        isExporting={isExporting}
-                        exportProgress={exportProgress}
-                    />
+                    <button
+                        onClick={() => setShowExportModal(true)}
+                        disabled={isExporting}
+                        className="btn-secondary"
+                        style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                        {isExporting ? (
+                            <>
+                                <Loader2 size={16} className="animate-spin" />
+                                <span>{exportProgress}%</span>
+                            </>
+                        ) : (
+                            <>
+                                <Download size={16} />
+                                <span>PDF</span>
+                            </>
+                        )}
+                    </button>
                     <button
                         onClick={() => setShowFilterModal(true)}
                         style={{
@@ -732,7 +730,7 @@ export const TimelinePage = () => {
                             </span>
                         )}
                     </button>
-                    <button onClick={addParentEvent} className="btn-primary" style={{ alignItems: 'center', gap: '0.5rem', display: isComparing || isPlaying ? 'none' : 'flex' }}>
+                    <button onClick={addParentEvent} className="btn-primary" style={{ alignItems: 'center', gap: '0.5rem', display: isComparing ? 'none' : 'flex' }}>
                         <Plus size={18} /> Nueva Época
                     </button>
                 </div>
@@ -769,7 +767,7 @@ export const TimelinePage = () => {
                         }}
                         editingEvent={editingEvent}
                         setEditingEvent={setEditingEvent}
-                        focusedEventId={focusedEventId}
+                        onSaveEditingEvent={saveEditingEvent}
                         setViewingEvent={setViewingEvent}
                         renderAll={isExporting}
                     />
@@ -801,8 +799,9 @@ export const TimelinePage = () => {
                                 timelineContainerRef.current.container.scrollLeft = sl;
                                 isSyncingScroll.current = false;
                             }}
-                            editingEvent={editingEvent} // Use common editing state
+                            editingEvent={editingEvent}
                             setEditingEvent={setEditingEvent}
+                            onSaveEditingEvent={saveEditingEvent}
                             setViewingEvent={setViewingEvent}
                         />
                     </div>
@@ -883,23 +882,20 @@ export const TimelinePage = () => {
                 />
             )}
 
-            {showPlaybackModal && (
-                <PlaybackSettingsModal
-                    minDate={new Date(Math.min(...events.map(e => e.start.getTime())))}
-                    maxDate={new Date(Math.max(...events.map(e => e.end.getTime())))}
-                    onClose={() => setShowPlaybackModal(false)}
-                    onStart={startPlayback}
-                />
-            )}
-
-
             {viewingEvent && (
                 <EventViewer
                     event={viewingEvent}
-                    isPresentationMode={isPlaying}
                     onClose={() => setViewingEvent(null)}
                 />
             )}
+
+            <EventTreePanel
+                events={events}
+                hiddenEventIds={hiddenEventIds}
+                onToggleVisibility={handleToggleEventVisibility}
+                isOpen={showTreePanel}
+                onToggle={() => setShowTreePanel(prev => !prev)}
+            />
         </div>
     );
 };

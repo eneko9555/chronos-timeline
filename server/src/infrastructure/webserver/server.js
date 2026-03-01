@@ -1,4 +1,9 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
+// Fallback: also try server/.env
+if (!process.env.MONGO_URI) {
+    require('dotenv').config({ path: path.resolve(__dirname, '../../..', '.env') });
+}
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('../database/mongooseProvider');
@@ -24,31 +29,18 @@ const app = express();
 
 const allowedOrigins = [
     'https://chronos-timeline.vercel.app',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    'http://localhost:5173'
 ];
 
 const corsOptions = {
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, origin);
-        }
-        return callback(new Error('Not allowed by CORS'));
-    },
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
-
-// Manejo de OPTIONS compatible con Express moderno
-app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-        return cors(corsOptions)(req, res, next);
-    }
-    next();
-});
 
 /* =========================
    2. MIDDLEWARES
