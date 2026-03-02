@@ -14,13 +14,23 @@ const EventSchema = new mongoose.Schema({
 
     isMilestone: Boolean,
     description: String,
-    mediaUrl: String,
+    mediaUrls: [String],
     geo: {
         lat: Number,
         lng: Number,
         name: String
     },
     tags: [String]
+});
+
+const NoteSchema = new mongoose.Schema({
+    id: { type: String, required: true },
+    text: { type: String, default: '' },
+    x: Number,    // absolute timestamp (ms)
+    y: Number,    // vertical position in px
+    width: Number,
+    height: Number,
+    color: { type: String, default: '#fbbf24' }
 });
 
 const TimelineSchema = new mongoose.Schema({
@@ -30,6 +40,7 @@ const TimelineSchema = new mongoose.Schema({
     coverImage: { type: String, default: '' },
     themeId: { type: String, default: 'chronos' },
     events: [EventSchema],
+    notes: [NoteSchema],
     updatedAt: { type: Date, default: Date.now }
 });
 

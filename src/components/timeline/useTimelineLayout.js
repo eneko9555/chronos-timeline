@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export const useTimelineLayout = (events, zoom) => {
+export const useTimelineLayout = (events, zoom, collapsedTracks) => {
     // Derived constants
     const pixelsPerDay = zoom;
     const isCompact = pixelsPerDay < 0.5;
@@ -104,7 +104,10 @@ export const useTimelineLayout = (events, zoom) => {
         return { eventRows, trackRows };
     }, [events]);
 
+    const COLLAPSED_HEIGHT = 20;
+
     const getTrackHeight = (trackId) => {
+        if (collapsedTracks && collapsedTracks.has(trackId)) return COLLAPSED_HEIGHT;
         const rows = layout.trackRows[trackId] || 1;
         // For bar tracks: (Rows * BarHeight) + ((Rows-1) * Gap) + Padding
         const contentHeight = (rows * EVENT_HEIGHT) + ((rows - 1) * ROW_GAP);

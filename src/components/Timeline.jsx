@@ -11,7 +11,7 @@ import { TimelineAxis } from './timeline/TimelineAxis';
 import { TimelineGrid } from './timeline/TimelineGrid';
 import { formatYearLabel, createDateFromParts, getDateParts } from '../utils';
 
-export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onDeleteEvent, onAddSubEvent, onAddMilestone, onZoomChange, onScroll, minDateOverride, totalDaysOverride, editingEvent, setEditingEvent, onSaveEditingEvent, focusedEventId, setViewingEvent, renderAll = false }, ref) => {
+export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onDeleteEvent, onAddSubEvent, onAddMilestone, onZoomChange, onScroll, minDateOverride, totalDaysOverride, editingEvent, setEditingEvent, onSaveEditingEvent, focusedEventId, setViewingEvent, renderAll = false, collapsedTracks, onToggleTrack, notes, onAddNote, onUpdateNote, onDeleteNote }, ref) => {
     const [selectedEventId, setSelectedEventId] = useState(null);
     const [contextMenu, setContextMenu] = useState(null);
 
@@ -45,7 +45,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
         ROW_GAP,
         TRACK_GAP,
         isCompact
-    } = useTimelineLayout(events, zoom);
+    } = useTimelineLayout(events, zoom, collapsedTracks);
 
     // 2. Timeline Bounds and Axis Logic
     // Keep this here as it drives the `getX` which is needed for interactions
@@ -150,7 +150,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
         } else {
             setSelectedEventId(null);
         }
-    }, setScrollLeft, layout); // Pass layout for collision detection
+    }, setScrollLeft, layout, onAddNote ? (xDays, y) => onAddNote(xDays, y) : null); // Pass layout for collision detection and double-click handler
 
     // Expose DOM and internal values to parent
     useImperativeHandle(ref, () => ({
@@ -250,6 +250,19 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
         return labels;
     }, [minDate, maxDate, zoom, scrollLeft, viewportWidth, renderAll]);
 
+    // Helper: get inherited color from closest ancestor with a color
+    const getInheritedColor = (event) => {
+        if (event.color) return event.color;
+        let current = event;
+        while (current && current.parentId) {
+            const parent = events.find(e => e.id === current.parentId);
+            if (!parent) break;
+            if (parent.color) return parent.color;
+            current = parent;
+        }
+        return '#666';
+    };
+
     // Helper for rendering
     const getEventDisplay = (event) => {
         if (tempEventState && tempEventState.id === event.id) {
@@ -284,13 +297,19 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
         const maxVisibleX = scrollLeft + viewportWidth + BUFFER_PX;
 
         return events.filter(e => {
+            // Skip events in collapsed tracks
+            if (collapsedTracks && collapsedTracks.size > 0) {
+                const trackId = getEventTrackId(e);
+                if (collapsedTracks.has(trackId)) return false;
+            }
+
             const startX = getX(e.start);
             const endX = getX(e.end);
 
             // Check intersection: event end > min && event start < max
             return endX > minVisibleX && startX < maxVisibleX;
         });
-    }, [events, scrollLeft, viewportWidth, getX]);
+    }, [events, scrollLeft, viewportWidth, getX, collapsedTracks]);
 
     // Parent Event Auto-Scroll (Keep effect here or move to interactions? Leaving here as it is UI specific)
     const parentEvents = events.filter(e => e.isParent).sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -364,7 +383,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                     <div style={{ display: 'flex', minWidth: '100%', width: 'max-content', position: 'relative' }}>
 
                         {/* SIDEBAR (Sticky Left — scrolls vertically, fixed horizontally) */}
-                        <TimelineSidebar tracks={tracks} getTrackHeight={getTrackHeight} trackGap={TRACK_GAP} />
+                        <TimelineSidebar tracks={tracks} getTrackHeight={getTrackHeight} trackGap={TRACK_GAP} collapsedTracks={collapsedTracks} onToggleTrack={onToggleTrack} />
 
                         <div style={{ width: totalWidth, height: totalHeight, minHeight: '100%', position: 'relative' }}>
 
@@ -535,7 +554,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                             width: isCompact ? '16px' : '28px',
                                                             height: isCompact ? '16px' : '28px',
                                                             borderRadius: '50%',
-                                                            background: event.color || '#666',
+                                                            background: getInheritedColor(event),
                                                             border: focusedEventId === event.id ? '3px solid #60a5fa' : '2px solid white',
                                                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                                                             zIndex: 2,
@@ -549,9 +568,9 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                             userSelect: 'none'
                                                         }}
                                                     >
-                                                        {event.mediaUrl ? (
+                                                        {event.mediaUrls?.[0] ? (
                                                             <img
-                                                                src={event.mediaUrl}
+                                                                src={event.mediaUrls[0]}
                                                                 alt=""
                                                                 style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
                                                             />
@@ -559,6 +578,27 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                             event.title ? event.title.charAt(0).toUpperCase() : ''
                                                         )}
                                                     </motion.div>
+                                                    {!isCompact && event.title && (
+                                                        <span style={{
+                                                            writingMode: 'vertical-rl',
+                                                            textOrientation: 'mixed',
+                                                            fontSize: '0.65rem',
+                                                            color: 'var(--text-secondary)',
+                                                            whiteSpace: 'nowrap',
+                                                            position: 'absolute',
+                                                            top: isCompact ? '18px' : '30px',
+                                                            left: '50%',
+                                                            transform: 'translateX(-50%)',
+                                                            maxHeight: '120px',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            lineHeight: 1,
+                                                            pointerEvents: 'none',
+                                                            opacity: 0.8
+                                                        }}>
+                                                            {event.title}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <motion.div
@@ -569,12 +609,14 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                             ? (isValidDrop ? 'rgba(74, 222, 128, 0.7)' : 'rgba(239, 68, 68, 0.7)')
                                                             : (isEpoch
                                                                 ? `linear-gradient(135deg, ${display.color.replace('hsl(', 'hsla(').replace(')', ', 0.6)')} 0%, ${display.color.replace('hsl(', 'hsla(').replace(')', ', 0.3)')} 100%)`
-                                                                : 'rgba(255, 255, 255, 0.04)'),
+                                                                : (getInheritedColor(event) !== '#666'
+                                                                    ? `linear-gradient(135deg, ${getInheritedColor(event).replace('hsl(', 'hsla(').replace(')', ', 0.25)')} 0%, ${getInheritedColor(event).replace('hsl(', 'hsla(').replace(')', ', 0.1)')} 100%)`
+                                                                    : 'rgba(255, 255, 255, 0.04)')),
                                                         backdropFilter: 'blur(12px) saturate(180%)',
                                                         WebkitBackdropFilter: 'blur(12px) saturate(180%)',
                                                         borderRadius: '8px',
                                                         border: focusedEventId === event.id ? '2px solid var(--accent-color)' : '1px solid rgba(255, 255, 255, 0.1)',
-                                                        borderLeft: `4px solid ${display.color}`,
+                                                        borderLeft: `4px solid ${display.color || getInheritedColor(event)}`,
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         padding: '0 12px',
@@ -584,7 +626,7 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                                         overflow: 'hidden',
                                                         whiteSpace: 'nowrap',
                                                         cursor: 'grab',
-                                                        boxShadow: `0 4px 12px ${display.color ? display.color.replace('hsl(', 'hsla(').replace(')', ', 0.15)') : 'rgba(0,0,0,0.2)'}`,
+                                                        boxShadow: `0 4px 12px ${(display.color || getInheritedColor(event)).replace('hsl(', 'hsla(').replace(')', ', 0.15)')}`,
                                                         position: 'relative',
                                                         zIndex: focusedEventId === event.id ? 20 : 1,
                                                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
@@ -623,6 +665,144 @@ export const Timeline = forwardRef(({ events, zoom, viewDate, onUpdateEvent, onD
                                     );
                                 })}
                             </div>
+
+                            {/* 8. STICKY NOTES */}
+                            {notes && notes.length > 0 && (
+                                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15 }}>
+                                    {notes.map(note => {
+                                        const noteX = getX(new Date(note.x));
+                                        return (
+                                            <div
+                                                key={note.id}
+                                                onPointerDown={(e) => {
+                                                    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    const startX = e.clientX;
+                                                    const startY = e.clientY;
+                                                    const origTimestamp = note.x;
+                                                    const origYPx = note.y;
+
+                                                    const onMove = (me) => {
+                                                        const dx = me.clientX - startX;
+                                                        const dy = me.clientY - startY;
+                                                        // Convert pixel delta to ms delta
+                                                        const msDelta = (dx / zoom) * 86400000;
+                                                        const newTimestamp = origTimestamp + msDelta;
+                                                        const newYPx = origYPx + dy;
+                                                        if (onUpdateNote) onUpdateNote(note.id, { x: newTimestamp, y: newYPx });
+                                                    };
+                                                    const onUp = () => {
+                                                        document.removeEventListener('pointermove', onMove);
+                                                        document.removeEventListener('pointerup', onUp);
+                                                        document.body.style.cursor = '';
+                                                    };
+                                                    document.body.style.cursor = 'grabbing';
+                                                    document.addEventListener('pointermove', onMove);
+                                                    document.addEventListener('pointerup', onUp);
+                                                }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: `${noteX}px`,
+                                                    top: `${note.y}px`,
+                                                    width: `${note.width || 160}px`,
+                                                    height: `${note.height || 100}px`,
+                                                    background: note.color || 'rgba(251, 191, 36, 0.9)',
+                                                    borderRadius: '4px',
+                                                    boxShadow: '2px 2px 8px rgba(0,0,0,0.3)',
+                                                    pointerEvents: 'auto',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    fontFamily: 'sans-serif',
+                                                    overflow: 'hidden'
+                                                }}
+                                            >
+                                                {/* Drag handle header */}
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '4px 6px',
+                                                    cursor: 'grab',
+                                                    background: 'rgba(0,0,0,0.08)',
+                                                    borderBottom: '1px solid rgba(0,0,0,0.1)',
+                                                    userSelect: 'none',
+                                                    flexShrink: 0
+                                                }}>
+                                                    <span style={{ fontSize: '10px', color: 'rgba(0,0,0,0.4)', letterSpacing: '2px' }}>. . .</span>
+                                                    {onDeleteNote && (
+                                                        <button
+                                                            onClick={() => onDeleteNote(note.id)}
+                                                            style={{
+                                                                all: 'unset',
+                                                                cursor: 'pointer',
+                                                                fontSize: '14px',
+                                                                color: 'rgba(0,0,0,0.4)',
+                                                                lineHeight: 1
+                                                            }}
+                                                            title="Eliminar nota"
+                                                        >
+                                                            x
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <textarea
+                                                    value={note.text}
+                                                    onChange={(e) => onUpdateNote && onUpdateNote(note.id, { text: e.target.value })}
+                                                    placeholder="Escribe una nota..."
+                                                    style={{
+                                                        flex: 1,
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        outline: 'none',
+                                                        resize: 'none',
+                                                        color: 'rgba(0,0,0,0.8)',
+                                                        fontSize: '0.75rem',
+                                                        fontFamily: 'inherit',
+                                                        lineHeight: 1.4,
+                                                        padding: '6px 8px'
+                                                    }}
+                                                />
+                                                {/* Resize handle */}
+                                                <div
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                        e.preventDefault();
+                                                        const startX = e.clientX;
+                                                        const startY = e.clientY;
+                                                        const origW = note.width || 160;
+                                                        const origH = note.height || 100;
+
+                                                        const onMove = (me) => {
+                                                            const newW = Math.max(100, origW + (me.clientX - startX));
+                                                            const newH = Math.max(60, origH + (me.clientY - startY));
+                                                            if (onUpdateNote) onUpdateNote(note.id, { width: newW, height: newH });
+                                                        };
+                                                        const onUp = () => {
+                                                            document.removeEventListener('pointermove', onMove);
+                                                            document.removeEventListener('pointerup', onUp);
+                                                            document.body.style.cursor = '';
+                                                        };
+                                                        document.body.style.cursor = 'nwse-resize';
+                                                        document.addEventListener('pointermove', onMove);
+                                                        document.addEventListener('pointerup', onUp);
+                                                    }}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        bottom: 0,
+                                                        right: 0,
+                                                        width: '14px',
+                                                        height: '14px',
+                                                        cursor: 'nwse-resize',
+                                                        background: 'linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.2) 50%)',
+                                                        borderRadius: '0 0 4px 0'
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

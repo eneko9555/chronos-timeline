@@ -1,32 +1,7 @@
-import { X, Check, Square, CheckSquare } from 'lucide-react';
+import { X } from 'lucide-react';
 
-export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag, allTags, selectedLocations, onToggleLocation, allLocations, onClose }) => {
-    const filterTypes = [
-        { id: 'epoch', label: 'Épocas', color: '#ff6b6b', description: 'Zonas de fondo y barras principales' },
-        { id: 'stage', label: 'Etapas', color: '#4ecdc4', description: 'Periodos de tiempo secundarios' },
-        { id: 'event', label: 'Sucesos', color: '#45b7d1', description: 'Eventos puntuales o cortos' },
-        { id: 'milestone', label: 'Hitos', color: '#96ceb4', description: 'Puntos clave circulares' }
-    ];
-
-    const allSelected = activeFilters.size === filterTypes.length;
-
-    const handleSelectAll = () => {
-        if (allSelected) {
-            onToggle(new Set());
-        } else {
-            onToggle(new Set(filterTypes.map(f => f.id)));
-        }
-    };
-
-    const handleToggle = (id) => {
-        const newFilters = new Set(activeFilters);
-        if (newFilters.has(id)) {
-            newFilters.delete(id);
-        } else {
-            newFilters.add(id);
-        }
-        onToggle(newFilters);
-    };
+export const FilterModal = ({ selectedTags, onToggleTag, allTags, selectedLocations, onToggleLocation, allLocations, onClose }) => {
+    const hasActiveFilters = selectedTags.size > 0 || selectedLocations.size > 0;
 
     return (
         <div
@@ -73,69 +48,6 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                 </div>
 
                 <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, minHeight: 0 }}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginBottom: '1.5rem',
-                        padding: '0 4px'
-                    }}>
-                        <button
-                            onClick={handleSelectAll}
-                            style={{
-                                all: 'unset',
-                                cursor: 'pointer',
-                                color: 'var(--accent-color)',
-                                fontSize: '0.9rem',
-                                fontWeight: '500'
-                            }}
-                        >
-                            {allSelected ? 'Desmarcar todo' : 'Marcar todo'}
-                        </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                        {filterTypes.map(type => {
-                            const isActive = activeFilters.has(type.id);
-                            return (
-                                <div
-                                    key={type.id}
-                                    onClick={() => handleToggle(type.id)}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '1rem',
-                                        padding: '1rem',
-                                        background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
-                                        border: `1px solid ${isActive ? 'var(--accent-color)' : 'var(--border-primary)'}`,
-                                        borderRadius: '12px',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
-                                    <div style={{
-                                        color: isActive ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                        display: 'flex',
-                                        alignItems: 'center'
-                                    }}>
-                                        {isActive ? <CheckSquare size={24} /> : <Square size={24} />}
-                                    </div>
-
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: type.color }} />
-                                            <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{type.label}</span>
-                                        </div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                            {type.description}
-                                        </div>
-                                    </div>
-
-                                    {isActive && <Check size={20} style={{ color: 'var(--accent-color)' }} />}
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: '1.5rem', marginTop: '0.5rem' }}>
                     <div style={{ marginBottom: '1.5rem' }}>
                         <h3 style={{ fontSize: '1rem', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             Filtrar por Tags
@@ -212,7 +124,6 @@ export const FilterModal = ({ activeFilters, onToggle, selectedTags, onToggleTag
                                 No hay ubicaciones disponibles.
                             </p>
                         )}
-                    </div>
                     </div>
                 </div>
 

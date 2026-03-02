@@ -34,6 +34,7 @@ class TimelineUseCase {
         if (metadata.description !== undefined) existingTimeline.description = metadata.description;
         if (metadata.coverImage !== undefined) existingTimeline.coverImage = metadata.coverImage;
         if (metadata.themeId !== undefined) existingTimeline.themeId = metadata.themeId;
+        if (metadata.notes !== undefined) existingTimeline.notes = metadata.notes;
 
         return this.timelineRepository.update(existingTimeline);
     }

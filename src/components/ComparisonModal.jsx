@@ -3,18 +3,19 @@ import { X, Search } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
-export const ComparisonModal = ({ onClose, onSelect, currentTimelineId }) => {
+export const ComparisonModal = ({ onClose, onSelect, excludeIds = [] }) => {
     const { token } = useAuth();
     const [timelines, setTimelines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
 
+    const excludeSet = new Set(excludeIds);
+
     useEffect(() => {
         if (token) {
             apiClient.getTimelines(token)
                 .then(data => {
-                    // Filter out the current timeline
-                    setTimelines(data.filter(t => t.id !== currentTimelineId));
+                    setTimelines(data.filter(t => !excludeSet.has(t.id)));
                     setLoading(false);
                 })
                 .catch(err => {
@@ -22,7 +23,7 @@ export const ComparisonModal = ({ onClose, onSelect, currentTimelineId }) => {
                     setLoading(false);
                 });
         }
-    }, [token, currentTimelineId]);
+    }, [token]);
 
     const filteredTimelines = timelines.filter(t =>
         t.identifier.toLowerCase().includes(search.toLowerCase())

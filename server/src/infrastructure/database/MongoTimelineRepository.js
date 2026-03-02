@@ -37,6 +37,10 @@ class MongoTimelineRepository extends TimelineRepository {
             updatedAt: new Date()
         };
 
+        if (timeline.notes !== undefined) {
+            updateData.notes = timeline.notes;
+        }
+
         if (timeline.identifier) {
             updateData.identifier = timeline.identifier;
         }
@@ -71,6 +75,7 @@ class MongoTimelineRepository extends TimelineRepository {
             description: doc.description || '',
             coverImage: doc.coverImage || '',
             themeId: doc.themeId || 'chronos',
+            notes: (doc.notes || []).map(n => ({ id: n.id, text: n.text, x: n.x, y: n.y, width: n.width, height: n.height, color: n.color })),
             events: doc.events.map(e => new Event({
                 id: e.id,
                 title: e.title,
@@ -83,7 +88,7 @@ class MongoTimelineRepository extends TimelineRepository {
                 order: e.order,
                 isMilestone: e.isMilestone,
                 description: e.description,
-                mediaUrl: e.mediaUrl,
+                mediaUrls: e.mediaUrls || (e.mediaUrl ? [e.mediaUrl] : []),
                 geo: e.geo,
                 tags: e.tags
             })),

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { MIN_ZOOM, MAX_ZOOM } from '../../utils';
 
-export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, onZoomChange, getX, onEventClick, setScrollLeft, layout) => {
+export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, onZoomChange, getX, onEventClick, setScrollLeft, layout, onDoubleClickEmpty) => {
     const containerRef = useRef(null);
     const hoverTimeoutRef = useRef(null);
     const zoomFocusRef = useRef(null);
+    const lastClickTime = useRef(0);
 
     // Interactive state
     const [interaction, setInteraction] = useState({ type: null, eventId: null });
@@ -75,6 +76,8 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
         if (!container) return;
 
         const handleWheel = (e) => {
+            if (!e.ctrlKey) return; // Only zoom with Ctrl+wheel; normal scroll for up/down
+
             e.preventDefault();
 
             // Calculate cursor position relative to container
@@ -193,7 +196,26 @@ export const useTimelineInteractions = (events, minDate, zoom, onUpdateEvent, on
             if (interaction.type === 'pan') {
                 setInteraction({ type: null });
                 document.body.style.cursor = '';
-                if (isClick && onEventClick) onEventClick(null);
+                if (isClick) {
+                    const now = Date.now();
+                    if (now - lastClickTime.current < 400 && onDoubleClickEmpty) {
+                        // Double-click on empty space
+                        const container = containerRef.current;
+                        if (container) {
+                            const rect = container.getBoundingClientRect();
+                            const xInTimeline = e.clientX - rect.left + container.scrollLeft;
+                            const yInTimeline = e.clientY - rect.top + container.scrollTop;
+                            // Convert x to absolute timestamp
+                            const daysFromMin = xInTimeline / zoom;
+                            const timestamp = minDate.getTime() + daysFromMin * 86400000;
+                            onDoubleClickEmpty(timestamp, yInTimeline);
+                        }
+                        lastClickTime.current = 0;
+                    } else {
+                        lastClickTime.current = now;
+                        if (onEventClick) onEventClick(null);
+                    }
+                }
                 return;
             }
 

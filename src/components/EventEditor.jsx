@@ -174,14 +174,71 @@ export const EventEditor = ({ event, onSave, onClose, onDelete }) => {
                     )}
 
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>URL Multimedia (Imagen/Video)</label>
-                        <input
-                            name="mediaUrl"
-                            value={formData.mediaUrl || ''}
-                            onChange={handleChange}
-                            placeholder="https://..."
-                            style={{ width: '100%' }}
-                        />
+                        <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>URLs Multimedia (Imagen/Video)</label>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <input
+                                id="media-url-input"
+                                placeholder="https://..."
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const url = e.target.value.trim();
+                                        if (url && !(formData.mediaUrls || []).includes(url)) {
+                                            setFormData({ ...formData, mediaUrls: [...(formData.mediaUrls || []), url] });
+                                            e.target.value = '';
+                                        }
+                                    }
+                                }}
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => {
+                                    const input = document.getElementById('media-url-input');
+                                    const url = input.value.trim();
+                                    if (url && !(formData.mediaUrls || []).includes(url)) {
+                                        setFormData({ ...formData, mediaUrls: [...(formData.mediaUrls || []), url] });
+                                        input.value = '';
+                                    }
+                                }}
+                            >
+                                <Plus size={16} />
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            {(formData.mediaUrls || []).map((url, idx) => {
+                                const isVideo = url.match(/\.(mp4|webm|ogg)$/i);
+                                return (
+                                    <div key={idx} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        borderRadius: '6px',
+                                        padding: '0.3rem 0.5rem',
+                                        border: '1px solid rgba(255,255,255,0.1)'
+                                    }}>
+                                        {isVideo ? (
+                                            <div style={{ width: '36px', height: '36px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', flexShrink: 0 }}>
+                                                Video
+                                            </div>
+                                        ) : (
+                                            <img src={url} alt="" style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 }} />
+                                        )}
+                                        <span style={{ flex: 1, fontSize: '0.8rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
+                                        <X
+                                            size={14}
+                                            style={{ cursor: 'pointer', flexShrink: 0, color: 'var(--text-secondary)' }}
+                                            onClick={() => setFormData({
+                                                ...formData,
+                                                mediaUrls: (formData.mediaUrls || []).filter((_, i) => i !== idx)
+                                            })}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div>

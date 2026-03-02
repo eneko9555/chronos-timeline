@@ -4,6 +4,7 @@ import { differenceInDays } from 'date-fns';
 import { Timeline } from '../components/Timeline';
 import { EventViewer } from '../components/EventViewer';
 import { createEvent, MIN_ZOOM, MAX_ZOOM } from '../utils';
+import { v4 as uuidv4 } from 'uuid';
 import { Plus, ArrowLeft, Save, GitCompare, X, Maximize, Minimize, Clock, SlidersHorizontal, Download, Loader2, FileSpreadsheet } from 'lucide-react';
 import { ComparisonModal } from '../components/ComparisonModal';
 import { useAuth } from '../context/AuthContext';
@@ -40,15 +41,34 @@ export const TimelinePage = () => {
     const [showComparisonModal, setShowComparisonModal] = useState(false);
     const [activeFilters, setActiveFilters] = useState(new Set(['epoch', 'stage', 'event', 'milestone']));
     const [showFilterModal, setShowFilterModal] = useState(false);
-    const [comparisonTimeline, setComparisonTimeline] = useState(null); // { id, name, description, coverImage, themeId, events }
-    const [lastSavedComparisonRef, setLastSavedComparisonRef] = useState(null);
-    const [isComparing, setIsComparing] = useState(false);
+    const [comparisonTimelines, setComparisonTimelines] = useState([]); // Array of { id, name, description, coverImage, themeId, events }
     const [comparisonZoom, setComparisonZoom] = useState(100);
     const [showExportModal, setShowExportModal] = useState(false);
     const [selectedTags, setSelectedTags] = useState(new Set());
     const [selectedLocations, setSelectedLocations] = useState(new Set());
     const [hiddenEventIds, setHiddenEventIds] = useState(new Set());
     const [showTreePanel, setShowTreePanel] = useState(false);
+    const [collapsedTracks, setCollapsedTracks] = useState(new Set());
+
+    const [notes, setNotes] = useState([]);
+
+    const isComparing = comparisonTimelines.length > 0;
+
+    const handleToggleTrack = useCallback((trackId) => {
+        setCollapsedTracks(prev => {
+            const next = new Set(prev);
+            if (next.has(trackId)) {
+                next.delete(trackId);
+            } else {
+                next.add(trackId);
+            }
+            // Sync with activeFilters
+            const allTypes = ['epoch', 'stage', 'event', 'milestone'];
+            const newActive = new Set(allTypes.filter(t => !next.has(t)));
+            setActiveFilters(newActive);
+            return next;
+        });
+    }, []);
 
     // Filtered Events helper
     const getFilteredList = (list) => {
@@ -69,7 +89,6 @@ export const TimelinePage = () => {
     };
 
     const filteredEvents = useMemo(() => getFilteredList(events), [events, activeFilters, selectedTags, selectedLocations, hiddenEventIds]);
-    const filteredComparisonEvents = useMemo(() => getFilteredList(comparisonTimeline?.events || []), [comparisonTimeline, activeFilters, selectedTags, selectedLocations, hiddenEventIds]);
 
     // Toggle visibility for tree panel
     const handleToggleEventVisibility = useCallback((eventId) => {
@@ -100,26 +119,26 @@ export const TimelinePage = () => {
     const allTags = useMemo(() => {
         const tags = new Set();
         events.forEach(e => (e.tags || []).forEach(t => tags.add(t)));
-        if (comparisonTimeline?.events) {
-            comparisonTimeline.events.forEach(e => (e.tags || []).forEach(t => tags.add(t)));
-        }
+        comparisonTimelines.forEach(ct => {
+            ct.events.forEach(e => (e.tags || []).forEach(t => tags.add(t)));
+        });
         return Array.from(tags).sort();
-    }, [events, comparisonTimeline]);
+    }, [events, comparisonTimelines]);
 
     const allLocations = useMemo(() => {
         const locations = new Set();
         events.forEach(e => { if (e.geo?.name) locations.add(e.geo.name); });
-        if (comparisonTimeline?.events) {
-            comparisonTimeline.events.forEach(e => { if (e.geo?.name) locations.add(e.geo.name); });
-        }
+        comparisonTimelines.forEach(ct => {
+            ct.events.forEach(e => { if (e.geo?.name) locations.add(e.geo.name); });
+        });
         return Array.from(locations).sort();
-    }, [events, comparisonTimeline]);
+    }, [events, comparisonTimelines]);
 
     // Calculate common bounds for synchronization
     const commonBounds = useMemo(() => {
-        if (!isComparing || !comparisonTimeline) return null;
+        if (!isComparing) return null;
 
-        const allEvs = [...events, ...comparisonTimeline.events];
+        const allEvs = [...events, ...comparisonTimelines.flatMap(ct => ct.events)];
         if (allEvs.length === 0) return null;
 
         const starts = allEvs.map(e => new Date(e.start).getTime());
@@ -139,7 +158,7 @@ export const TimelinePage = () => {
             maxDate: max,
             totalDays: Math.max(differenceInDays(max, min), 30)
         };
-    }, [events, comparisonTimeline, isComparing]);
+    }, [events, comparisonTimelines, isComparing]);
 
     // Initial scroll alignment when comparison starts
     useEffect(() => {
@@ -155,7 +174,9 @@ export const TimelinePage = () => {
             const timer = setTimeout(() => {
                 const scrollPos = Math.max(0, targetX - 50);
                 if (timelineContainerRef.current) timelineContainerRef.current.container.scrollLeft = scrollPos;
-                if (comparisonContainerRef.current) comparisonContainerRef.current.container.scrollLeft = scrollPos;
+                Object.values(comparisonRefsMap.current).forEach(ref => {
+                    if (ref?.container) ref.container.scrollLeft = scrollPos;
+                });
             }, 150);
             return () => clearTimeout(timer);
         }
@@ -165,7 +186,8 @@ export const TimelinePage = () => {
     const lastSavedRef = useRef(null);
     const pageRef = useRef(null);
     const timelineContainerRef = useRef(null);
-    const comparisonContainerRef = useRef(null);
+    const comparisonRefsMap = useRef({}); // { timelineId: ref }
+    const lastSavedComparisonMap = useRef({}); // { timelineId: jsonString }
 
     const isSyncingScroll = useRef(false);
 
@@ -189,6 +211,7 @@ export const TimelinePage = () => {
                                 tags: e.tags || []
                             }));
                             setEvents(loadedEvents);
+                            if (data.notes) setNotes(data.notes);
 
                             // Fit-to-viewport: calculate ideal zoom from event span
                             if (loadedEvents.length > 0) {
@@ -208,6 +231,7 @@ export const TimelinePage = () => {
                             // Initialize lastSavedRef with loaded data
                             const initialState = JSON.stringify({
                                 events: loadedEvents,
+                                notes: data.notes || [],
                                 name: data.identifier || 'Timeline',
                                 description: data.description || '',
                                 coverImage: data.coverImage || '',
@@ -292,17 +316,17 @@ export const TimelinePage = () => {
 
     // Debounced save
     const debouncedSave = useCallback(
-        debounce((currentEvents, token, timelineId, name, description, coverImage, themeId) => {
+        debounce((currentEvents, token, timelineId, name, description, coverImage, themeId, currentNotes) => {
             if (!token) return;
             setIsSaving(true);
             const startTime = Date.now();
 
-            // We can send everything to saveTimeline if we update the API and backend
             apiClient.saveTimeline(token, timelineId, currentEvents, {
                 identifier: name,
                 description: description,
                 coverImage: coverImage,
-                themeId: themeId
+                themeId: themeId,
+                notes: currentNotes
             })
                 .then(() => {
                     // Ensure indicator shows for at least 800ms
@@ -332,12 +356,13 @@ export const TimelinePage = () => {
         []
     );
 
-    // Trigger save when events change
+    // Trigger save when events or notes change
     useEffect(() => {
         if (!isLoaded || !token || !id) return;
 
         const currentState = JSON.stringify({
             events,
+            notes,
             name: timelineName,
             description: timelineDescription,
             coverImage: timelineCoverImage,
@@ -345,36 +370,32 @@ export const TimelinePage = () => {
         });
 
         if (currentState !== lastSavedRef.current) {
-            debouncedSave(events, token, id, timelineName, timelineDescription, timelineCoverImage, themeId);
+            debouncedSave(events, token, id, timelineName, timelineDescription, timelineCoverImage, themeId, notes);
             lastSavedRef.current = currentState;
         }
-    }, [events, token, id, timelineName, timelineDescription, timelineCoverImage, themeId, debouncedSave, isLoaded]);
+    }, [events, notes, token, id, timelineName, timelineDescription, timelineCoverImage, themeId, debouncedSave, isLoaded]);
 
-    // Trigger save for comparison timeline
+    // Trigger save for comparison timelines
     useEffect(() => {
-        if (!isComparing || !comparisonTimeline || !token) return;
+        if (!isComparing || !token) return;
 
-        const currentState = JSON.stringify({
-            events: comparisonTimeline.events,
-            name: comparisonTimeline.name,
-            description: comparisonTimeline.description,
-            coverImage: comparisonTimeline.coverImage,
-            themeId: comparisonTimeline.themeId
+        comparisonTimelines.forEach(ct => {
+            const currentState = JSON.stringify({
+                events: ct.events,
+                name: ct.name,
+                description: ct.description,
+                coverImage: ct.coverImage,
+                themeId: ct.themeId
+            });
+
+            if (currentState !== lastSavedComparisonMap.current[ct.id]) {
+                debouncedSaveComparison(
+                    ct.id, ct.events, ct.name, ct.description, ct.coverImage, ct.themeId, token
+                );
+                lastSavedComparisonMap.current[ct.id] = currentState;
+            }
         });
-
-        if (currentState !== lastSavedComparisonRef) {
-            debouncedSaveComparison(
-                comparisonTimeline.id,
-                comparisonTimeline.events,
-                comparisonTimeline.name,
-                comparisonTimeline.description,
-                comparisonTimeline.coverImage,
-                comparisonTimeline.themeId,
-                token
-            );
-            setLastSavedComparisonRef(currentState);
-        }
-    }, [comparisonTimeline, token, isComparing, debouncedSaveComparison, lastSavedComparisonRef]);
+    }, [comparisonTimelines, token, isComparing, debouncedSaveComparison]);
 
     const addParentEvent = () => {
         const newEvent = createEvent(true, null, 0, false, 'epoch');
@@ -398,7 +419,7 @@ export const TimelinePage = () => {
 
     const addMilestone = (subEventId) => {
         const subEvent = events.find(e => e.id === subEventId);
-        if (!subEvent || subEvent.isParent) return;
+        if (!subEvent) return;
 
         const siblingMilestones = events.filter(e => e.parentId === subEventId && e.isMilestone);
         const newOrder = 0; // Default to first level
@@ -410,6 +431,20 @@ export const TimelinePage = () => {
         setEditingEvent(milestone);
     };
 
+    // --- Notes Handlers ---
+    const addNote = useCallback((x, y) => {
+        const newNote = { id: uuidv4(), text: '', x, y, color: '#fbbf24' };
+        setNotes(prev => [...prev, newNote]);
+    }, []);
+
+    const updateNote = useCallback((noteId, updates) => {
+        setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
+    }, []);
+
+    const deleteNote = useCallback((noteId) => {
+        setNotes(prev => prev.filter(n => n.id !== noteId));
+    }, []);
+
     const saveEditingEvent = (updatedEvent) => {
         const exists = events.some(e => e.id === updatedEvent.id);
         if (exists) {
@@ -419,93 +454,74 @@ export const TimelinePage = () => {
         }
     };
 
-    // --- Comparison Handlers ---
-    const updateComparisonEvent = (updatedEvent, options = {}, batchEvents = null) => {
-        if (!comparisonTimeline) return;
-        const { cascade = false } = options;
-        const oldEvent = comparisonTimeline.events.find(e => e.id === updatedEvent.id);
+    // --- Comparison Handlers (parametrized by timeline ID) ---
+    const updateComparisonTimelineById = (timelineId, updaterFn) => {
+        setComparisonTimelines(prev => prev.map(ct =>
+            ct.id === timelineId ? updaterFn(ct) : ct
+        ));
+    };
 
-        let newEvents;
-        if (batchEvents) {
-            newEvents = batchEvents;
-        } else {
-            newEvents = comparisonTimeline.events.map(e => e.id === updatedEvent.id ? updatedEvent : e);
-
-            if (cascade && oldEvent && updatedEvent.isParent) {
-                const timeDiff = updatedEvent.start.getTime() - oldEvent.start.getTime();
-                if (timeDiff !== 0) {
-                    newEvents = newEvents.map(e => {
-                        if (e.parentId === updatedEvent.id) {
-                            return {
-                                ...e,
-                                start: new Date(e.start.getTime() + timeDiff),
-                                end: new Date(e.end.getTime() + timeDiff)
-                            };
+    const createComparisonHandlers = (timelineId) => ({
+        updateEvent: (updatedEvent, options = {}, batchEvents = null) => {
+            updateComparisonTimelineById(timelineId, (ct) => {
+                const { cascade = false } = options;
+                const oldEvent = ct.events.find(e => e.id === updatedEvent.id);
+                let newEvents;
+                if (batchEvents) {
+                    newEvents = batchEvents;
+                } else {
+                    newEvents = ct.events.map(e => e.id === updatedEvent.id ? updatedEvent : e);
+                    if (cascade && oldEvent && updatedEvent.isParent) {
+                        const timeDiff = updatedEvent.start.getTime() - oldEvent.start.getTime();
+                        if (timeDiff !== 0) {
+                            newEvents = newEvents.map(e => {
+                                if (e.parentId === updatedEvent.id) {
+                                    return { ...e, start: new Date(e.start.getTime() + timeDiff), end: new Date(e.end.getTime() + timeDiff) };
+                                }
+                                return e;
+                            });
                         }
-                        return e;
-                    });
+                    }
                 }
-            }
-        }
-
-        setComparisonTimeline({ ...comparisonTimeline, events: newEvents });
-    };
-
-    const deleteComparisonEvent = (id) => {
-        if (!comparisonTimeline) return;
-        const getDescendantIds = (parentId, allEvents) => {
-            const children = allEvents.filter(e => e.parentId === parentId);
-            let ids = children.map(c => c.id);
-            children.forEach(child => {
-                ids = [...ids, ...getDescendantIds(child.id, allEvents)];
+                return { ...ct, events: newEvents };
             });
-            return ids;
-        };
-
-        const idsToDelete = [id, ...getDescendantIds(id, comparisonTimeline.events)];
-        const idsSet = new Set(idsToDelete);
-
-        setComparisonTimeline({
-            ...comparisonTimeline,
-            events: comparisonTimeline.events.filter(e => !idsSet.has(e.id))
-        });
-    };
-
-    const addComparisonSubEvent = (parentId, type = 'stage') => {
-        if (!comparisonTimeline) return;
-        const parent = comparisonTimeline.events.find(e => e.id === parentId);
-        if (!parent) return;
-
-        const siblingSubEvents = comparisonTimeline.events.filter(e => e.parentId === parentId && !e.isMilestone && e.type === type);
-        const newOrder = Math.max(...siblingSubEvents.map(e => e.order || 0), -1) + 1;
-
-        const sub = createEvent(false, parentId, newOrder, false, type);
-        sub.start = new Date(parent.start);
-        sub.end = new Date(parent.end);
-
-        setComparisonTimeline({
-            ...comparisonTimeline,
-            events: [...comparisonTimeline.events, sub]
-        });
-    };
-
-    const addComparisonMilestone = (subEventId) => {
-        if (!comparisonTimeline) return;
-        const subEvent = comparisonTimeline.events.find(e => e.id === subEventId);
-        if (!subEvent || subEvent.isParent) return;
-
-        const siblingMilestones = comparisonTimeline.events.filter(e => e.parentId === subEventId && e.isMilestone);
-        const newOrder = 0; // Default to first level
-
-        const milestone = createEvent(false, subEventId, newOrder, true);
-        milestone.start = new Date(subEvent.start);
-        milestone.end = new Date(subEvent.start);
-
-        setComparisonTimeline({
-            ...comparisonTimeline,
-            events: [...comparisonTimeline.events, milestone]
-        });
-    };
+        },
+        deleteEvent: (eventId) => {
+            updateComparisonTimelineById(timelineId, (ct) => {
+                const getDescendantIds = (parentId, allEvents) => {
+                    const children = allEvents.filter(e => e.parentId === parentId);
+                    let ids = children.map(c => c.id);
+                    children.forEach(child => { ids = [...ids, ...getDescendantIds(child.id, allEvents)]; });
+                    return ids;
+                };
+                const idsToDelete = [eventId, ...getDescendantIds(eventId, ct.events)];
+                const idsSet = new Set(idsToDelete);
+                return { ...ct, events: ct.events.filter(e => !idsSet.has(e.id)) };
+            });
+        },
+        addSubEvent: (parentId, type = 'stage') => {
+            updateComparisonTimelineById(timelineId, (ct) => {
+                const parent = ct.events.find(e => e.id === parentId);
+                if (!parent) return ct;
+                const siblingSubEvents = ct.events.filter(e => e.parentId === parentId && !e.isMilestone && e.type === type);
+                const newOrder = Math.max(...siblingSubEvents.map(e => e.order || 0), -1) + 1;
+                const sub = createEvent(false, parentId, newOrder, false, type);
+                sub.start = new Date(parent.start);
+                sub.end = new Date(parent.end);
+                return { ...ct, events: [...ct.events, sub] };
+            });
+        },
+        addMilestone: (subEventId) => {
+            updateComparisonTimelineById(timelineId, (ct) => {
+                const subEvent = ct.events.find(e => e.id === subEventId);
+                if (!subEvent) return ct;
+                const milestone = createEvent(false, subEventId, 0, true);
+                milestone.start = new Date(subEvent.start);
+                milestone.end = new Date(subEvent.start);
+                return { ...ct, events: [...ct.events, milestone] };
+            });
+        }
+    });
 
     const updateEvent = (updatedEvent, options = {}, batchEvents = null) => {
         const { cascade = false } = options;
@@ -587,24 +603,30 @@ export const TimelinePage = () => {
                         themeId: data.themeId || 'chronos',
                         events: loadedEvents
                     };
-                    setComparisonTimeline(compData);
-                    setLastSavedComparisonRef(JSON.stringify({
+                    lastSavedComparisonMap.current[targetId] = JSON.stringify({
                         events: loadedEvents,
                         name: compData.name,
                         description: compData.description,
                         coverImage: compData.coverImage,
                         themeId: compData.themeId
-                    }));
-                    setIsComparing(true);
+                    });
+                    setComparisonTimelines(prev => [...prev, compData]);
                     setShowComparisonModal(false);
                 }
             })
             .catch(err => console.error("Failed to load comparison timeline", err));
     };
 
-    const removeComparison = () => {
-        setComparisonTimeline(null);
-        setIsComparing(false);
+    const removeComparison = (targetId) => {
+        setComparisonTimelines(prev => prev.filter(ct => ct.id !== targetId));
+        delete comparisonRefsMap.current[targetId];
+        delete lastSavedComparisonMap.current[targetId];
+    };
+
+    const removeAllComparisons = () => {
+        setComparisonTimelines([]);
+        comparisonRefsMap.current = {};
+        lastSavedComparisonMap.current = {};
     };
 
     if (!id) return null;
@@ -660,13 +682,12 @@ export const TimelinePage = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    {isComparing ? (
-                        <button onClick={removeComparison} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: '#ef4444', color: '#ef4444' }}>
-                            <X size={18} /> Cerrar Comparación
-                        </button>
-                    ) : (
-                        <button onClick={() => setShowComparisonModal(true)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <GitCompare size={18} /> Comparar
+                    <button onClick={() => setShowComparisonModal(true)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <GitCompare size={18} /> Comparar
+                    </button>
+                    {isComparing && (
+                        <button onClick={removeAllComparisons} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: '#ef4444', color: '#ef4444' }}>
+                            <X size={18} /> Cerrar Todo
                         </button>
                     )}
                     <button
@@ -712,18 +733,18 @@ export const TimelinePage = () => {
                             gap: '0.5rem',
                             padding: '0.6rem 1rem',
                             borderRadius: '10px',
-                            background: activeFilters.size < 4 ? 'var(--accent-color)' : 'rgba(255,255,255,0.05)',
-                            color: activeFilters.size < 4 ? 'white' : 'var(--text-secondary)',
+                            background: (selectedTags.size > 0 || selectedLocations.size > 0) ? 'var(--accent-color)' : 'rgba(255,255,255,0.05)',
+                            color: (selectedTags.size > 0 || selectedLocations.size > 0) ? 'white' : 'var(--text-secondary)',
                             cursor: 'pointer',
                             fontWeight: '600',
                             fontSize: '0.9rem',
                             transition: 'all 0.2s ease',
-                            border: `1px solid ${activeFilters.size < 4 ? 'var(--accent-color)' : 'var(--border-primary)'}`
+                            border: `1px solid ${(selectedTags.size > 0 || selectedLocations.size > 0) ? 'var(--accent-color)' : 'var(--border-primary)'}`
                         }}
                     >
                         <SlidersHorizontal size={18} />
                         <span>Filtros</span>
-                        {activeFilters.size < 4 && (
+                        {(selectedTags.size > 0 || selectedLocations.size > 0) && (
                             <span style={{
                                 background: 'white',
                                 color: 'var(--accent-color)',
@@ -735,7 +756,7 @@ export const TimelinePage = () => {
                                 justifyContent: 'center',
                                 fontSize: '0.7rem'
                             }}>
-                                {activeFilters.size}
+                                {selectedTags.size + selectedLocations.size}
                             </span>
                         )}
                     </button>
@@ -768,10 +789,11 @@ export const TimelinePage = () => {
                             if (isComparing) setComparisonZoom(newZoom);
                         }}
                         onScroll={(sl) => {
-                            if (isSyncingScroll.current || !isComparing || !comparisonContainerRef.current) return;
+                            if (isSyncingScroll.current || !isComparing) return;
                             isSyncingScroll.current = true;
-                            comparisonContainerRef.current.container.scrollLeft = sl;
-                            // Also sync Y scroll if preferred, but usually X is the priority for time alignment
+                            Object.values(comparisonRefsMap.current).forEach(ref => {
+                                if (ref?.container) ref.container.scrollLeft = sl;
+                            });
                             isSyncingScroll.current = false;
                         }}
                         editingEvent={editingEvent}
@@ -779,42 +801,67 @@ export const TimelinePage = () => {
                         onSaveEditingEvent={saveEditingEvent}
                         setViewingEvent={setViewingEvent}
                         renderAll={isExporting}
+                        collapsedTracks={collapsedTracks}
+                        onToggleTrack={handleToggleTrack}
+                        notes={notes}
+                        onAddNote={addNote}
+                        onUpdateNote={updateNote}
+                        onDeleteNote={deleteNote}
                     />
                 </div>
 
-                {isComparing && comparisonTimeline && (
-                    <div style={{ flex: 1, overflow: 'hidden', position: 'relative', borderTop: '2px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
-                        <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 100, background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            {comparisonTimeline.name} (Comparación)
+                {comparisonTimelines.map(ct => {
+                    const handlers = createComparisonHandlers(ct.id);
+                    const filteredCtEvents = getFilteredList(ct.events);
+                    return (
+                        <div key={ct.id} style={{ flex: 1, overflow: 'hidden', position: 'relative', borderTop: '2px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                            <div style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 100, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    {ct.name} (Comparación)
+                                </span>
+                                <button
+                                    onClick={() => removeComparison(ct.id)}
+                                    style={{ all: 'unset', cursor: 'pointer', background: 'rgba(239,68,68,0.3)', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(239,68,68,0.5)' }}
+                                    title="Quitar esta comparación"
+                                >
+                                    <X size={12} color="#ef4444" />
+                                </button>
+                            </div>
+                            <Timeline
+                                ref={(el) => { comparisonRefsMap.current[ct.id] = el; }}
+                                events={filteredCtEvents}
+                                zoom={comparisonZoom}
+                                viewDate={viewDate}
+                                onUpdateEvent={handlers.updateEvent}
+                                onDeleteEvent={handlers.deleteEvent}
+                                onAddSubEvent={handlers.addSubEvent}
+                                onAddMilestone={handlers.addMilestone}
+                                minDateOverride={commonBounds?.minDate}
+                                totalDaysOverride={commonBounds?.totalDays}
+                                onZoomChange={(newZoom) => {
+                                    setComparisonZoom(newZoom);
+                                    setZoom(newZoom);
+                                }}
+                                onScroll={(sl) => {
+                                    if (isSyncingScroll.current || !timelineContainerRef.current) return;
+                                    isSyncingScroll.current = true;
+                                    timelineContainerRef.current.container.scrollLeft = sl;
+                                    // Sync other comparison timelines
+                                    Object.entries(comparisonRefsMap.current).forEach(([refId, ref]) => {
+                                        if (refId !== ct.id && ref?.container) ref.container.scrollLeft = sl;
+                                    });
+                                    isSyncingScroll.current = false;
+                                }}
+                                editingEvent={editingEvent}
+                                setEditingEvent={setEditingEvent}
+                                onSaveEditingEvent={saveEditingEvent}
+                                setViewingEvent={setViewingEvent}
+                                collapsedTracks={collapsedTracks}
+                                onToggleTrack={handleToggleTrack}
+                            />
                         </div>
-                        <Timeline
-                            ref={comparisonContainerRef}
-                            events={filteredComparisonEvents}
-                            zoom={comparisonZoom}
-                            viewDate={viewDate}
-                            onUpdateEvent={updateComparisonEvent}
-                            onDeleteEvent={deleteComparisonEvent}
-                            onAddSubEvent={addComparisonSubEvent}
-                            onAddMilestone={addComparisonMilestone}
-                            minDateOverride={commonBounds?.minDate}
-                            totalDaysOverride={commonBounds?.totalDays}
-                            onZoomChange={(newZoom) => {
-                                setComparisonZoom(newZoom);
-                                if (isComparing) setZoom(newZoom);
-                            }}
-                            onScroll={(sl) => {
-                                if (isSyncingScroll.current || !isComparing || !timelineContainerRef.current) return;
-                                isSyncingScroll.current = true;
-                                timelineContainerRef.current.container.scrollLeft = sl;
-                                isSyncingScroll.current = false;
-                            }}
-                            editingEvent={editingEvent}
-                            setEditingEvent={setEditingEvent}
-                            onSaveEditingEvent={saveEditingEvent}
-                            setViewingEvent={setViewingEvent}
-                        />
-                    </div>
-                )}
+                    );
+                })}
             </div>
 
             {/* Toast notification for saving */}
@@ -846,8 +893,6 @@ export const TimelinePage = () => {
             {/* Modals */}
             {showFilterModal && (
                 <FilterModal
-                    activeFilters={activeFilters}
-                    onToggle={setActiveFilters}
                     selectedTags={selectedTags}
                     onToggleTag={(tag) => {
                         const newTags = new Set(selectedTags);
@@ -870,7 +915,7 @@ export const TimelinePage = () => {
 
             {showComparisonModal && (
                 <ComparisonModal
-                    currentTimelineId={id}
+                    excludeIds={[id, ...comparisonTimelines.map(ct => ct.id)]}
                     onClose={() => setShowComparisonModal(false)}
                     onSelect={handleCompareSelect}
                 />

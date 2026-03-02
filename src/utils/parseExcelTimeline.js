@@ -107,7 +107,7 @@ export const parseExcelTimeline = (workbook, XLSX) => {
             order: i - 1,
             isMilestone: false,
             description: row[15] ? String(row[15]).trim() : '',
-            mediaUrl: row[11] ? String(row[11]).trim() : '',
+            mediaUrls: row[11] ? String(row[11]).split(';').map(s => s.trim()).filter(Boolean) : [],
             tags: []
         });
     }
@@ -147,7 +147,7 @@ export const parseExcelTimeline = (workbook, XLSX) => {
             order: i - 1,
             isMilestone: false,
             description: row[16] ? String(row[16]).trim() : '',
-            mediaUrl: row[12] ? String(row[12]).trim() : '',
+            mediaUrls: row[12] ? String(row[12]).split(';').map(s => s.trim()).filter(Boolean) : [],
             tags: parseTags(row[3], row[4])
         });
     }
@@ -189,7 +189,7 @@ export const parseExcelTimeline = (workbook, XLSX) => {
             order: i - 1,
             isMilestone: false,
             description: row[17] ? String(row[17]).trim() : '',
-            mediaUrl: row[13] ? String(row[13]).trim() : '',
+            mediaUrls: row[13] ? String(row[13]).split(';').map(s => s.trim()).filter(Boolean) : [],
             tags: parseTags(row[3], row[4])
         };
 
@@ -230,7 +230,7 @@ export const parseExcelTimeline = (workbook, XLSX) => {
             order: i - 1,
             isMilestone: true,
             description: row[14] ? String(row[14]).trim() : '',
-            mediaUrl: row[10] ? String(row[10]).trim() : '',
+            mediaUrls: row[10] ? String(row[10]).split(';').map(s => s.trim()).filter(Boolean) : [],
             tags: parseTags(row[3], row[4])
         };
 

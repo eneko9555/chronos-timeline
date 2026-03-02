@@ -28,6 +28,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
     XLSX.utils.book_append_sheet(wb, wsAreas, 'AREAS');
 
     // --- EPOCA sheet ---
+    // Columns: [0-2 reserved] [3] Título [4] Color [5-7] Inicio [8-10] Fin [11] Media [15] Descripción
     const epochs = events.filter(e => e.type === 'epoch');
     const epochHeaders = [
         '', '', '', 'Título', 'Color',
@@ -40,9 +41,6 @@ export const exportTimelineToExcel = (events, timelineName) => {
         const s = getDateParts(e.start);
         const end = getDateParts(e.end);
         const row = [];
-        row[0] = '';
-        row[1] = '';
-        row[2] = '';
         row[3] = e.title || '';
         row[4] = e.color || '';
         row[5] = s.year;
@@ -51,10 +49,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[8] = end.year;
         row[9] = end.month;
         row[10] = end.day;
-        row[11] = e.mediaUrl || '';
-        row[12] = '';
-        row[13] = '';
-        row[14] = '';
+        row[11] = e.mediaUrls?.join(';') || '';
         row[15] = e.description || '';
         epochRows.push(row);
     }
@@ -62,6 +57,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
     XLSX.utils.book_append_sheet(wb, wsEpochs, 'EPOCA');
 
     // --- ETAPA sheet ---
+    // Columns: [0] Época Padre [1] Título [3] Tag1 [4] Tag2 [5] Color [6-8] Inicio [9-11] Fin [12] Media [16] Descripción
     const stages = events.filter(e => e.type === 'stage');
     const stageHeaders = [
         'Época Padre', 'Título', '', 'Tag 1', 'Tag 2', 'Color',
@@ -77,7 +73,6 @@ export const exportTimelineToExcel = (events, timelineName) => {
         const row = [];
         row[0] = parentName(e);
         row[1] = e.title || '';
-        row[2] = '';
         row[3] = tags[0] || '';
         row[4] = tags[1] || '';
         row[5] = e.color || '';
@@ -87,10 +82,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[9] = end.year;
         row[10] = end.month;
         row[11] = end.day;
-        row[12] = e.mediaUrl || '';
-        row[13] = '';
-        row[14] = '';
-        row[15] = '';
+        row[12] = e.mediaUrls?.join(';') || '';
         row[16] = e.description || '';
         stageRows.push(row);
     }
@@ -98,6 +90,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
     XLSX.utils.book_append_sheet(wb, wsStages, 'ETAPA');
 
     // --- SUCESOS sheet ---
+    // Columns: [0] Etapa Padre [1] Título [3] Tag1 [4] Tag2 [5] Color [6] Ubicación [7-9] Inicio [10-12] Fin [13] Media [17] Descripción
     const evts = events.filter(e => e.type === 'event');
     const eventHeaders = [
         'Etapa Padre', 'Título', '', 'Tag 1', 'Tag 2', 'Color',
@@ -114,7 +107,6 @@ export const exportTimelineToExcel = (events, timelineName) => {
         const row = [];
         row[0] = parentName(e);
         row[1] = e.title || '';
-        row[2] = '';
         row[3] = tags[0] || '';
         row[4] = tags[1] || '';
         row[5] = e.color || '';
@@ -125,10 +117,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[10] = end.year;
         row[11] = end.month;
         row[12] = end.day;
-        row[13] = e.mediaUrl || '';
-        row[14] = '';
-        row[15] = '';
-        row[16] = '';
+        row[13] = e.mediaUrls?.join(';') || '';
         row[17] = e.description || '';
         eventRows.push(row);
     }
@@ -136,9 +125,10 @@ export const exportTimelineToExcel = (events, timelineName) => {
     XLSX.utils.book_append_sheet(wb, wsEvents, 'SUCESOS');
 
     // --- HITOS sheet ---
+    // Columns: [0] Padre [1] Título [3] Tag1 [4] Tag2 [6] Ubicación [7-9] Fecha [10] Media [14] Descripción
     const milestones = events.filter(e => e.type === 'milestone');
     const milestoneHeaders = [
-        'Suceso Padre', 'Título', '', 'Tag 1', 'Tag 2', '',
+        'Padre', 'Título', '', 'Tag 1', 'Tag 2', '',
         'Ubicación',
         'Año', 'Mes', 'Día',
         'Media URL', '', '', '', 'Descripción'
@@ -150,18 +140,13 @@ export const exportTimelineToExcel = (events, timelineName) => {
         const row = [];
         row[0] = parentName(e);
         row[1] = e.title || '';
-        row[2] = '';
         row[3] = tags[0] || '';
         row[4] = tags[1] || '';
-        row[5] = '';
         row[6] = e.geo?.name || '';
         row[7] = s.year;
         row[8] = s.month;
         row[9] = s.day;
-        row[10] = e.mediaUrl || '';
-        row[11] = '';
-        row[12] = '';
-        row[13] = '';
+        row[10] = e.mediaUrls?.join(';') || '';
         row[14] = e.description || '';
         milestoneRows.push(row);
     }

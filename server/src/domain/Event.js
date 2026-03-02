@@ -1,5 +1,5 @@
 class Event {
-  constructor({ id, title, start, end, color, parentId, isParent, type, order, isMilestone, description, mediaUrl, geo, tags }) {
+  constructor({ id, title, start, end, color, parentId, isParent, type, order, isMilestone, description, mediaUrls, geo, tags }) {
     this.id = id;
     this.title = title;
     this.start = new Date(start);
@@ -11,7 +11,7 @@ class Event {
     this.order = order;
     this.isMilestone = isMilestone;
     this.description = description;
-    this.mediaUrl = mediaUrl;
+    this.mediaUrls = mediaUrls || [];
     this.geo = geo;
     this.tags = tags || [];
   }

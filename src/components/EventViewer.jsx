@@ -1,9 +1,12 @@
-import React from 'react';
-import { X, Calendar, MapPin } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Calendar, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MapViewer } from './MapViewer';
 
 export const EventViewer = ({ event, onClose, isPresentationMode = false }) => {
-    const isVideo = event.mediaUrl?.match(/\.(mp4|webm|ogg)$/i);
+    const mediaUrls = event.mediaUrls || [];
+    const [mediaIndex, setMediaIndex] = useState(0);
+    const currentUrl = mediaUrls[mediaIndex];
+    const isVideo = currentUrl?.match(/\.(mp4|webm|ogg)$/i);
 
     const containerStyle = isPresentationMode ? {
         position: 'fixed',
@@ -41,12 +44,37 @@ export const EventViewer = ({ event, onClose, isPresentationMode = false }) => {
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header Image/Video Region */}
-                {event.mediaUrl && (
-                    <div style={{ width: '100%', maxHeight: '300px', overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
+                {mediaUrls.length > 0 && (
+                    <div style={{ width: '100%', maxHeight: '300px', overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center', position: 'relative' }}>
                         {isVideo ? (
-                            <video src={event.mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '300px' }} />
+                            <video src={currentUrl} controls style={{ maxWidth: '100%', maxHeight: '300px' }} />
                         ) : (
-                            <img src={event.mediaUrl} alt={event.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={currentUrl} alt={event.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        )}
+                        {mediaUrls.length > 1 && (
+                            <>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setMediaIndex((mediaIndex - 1 + mediaUrls.length) % mediaUrls.length); }}
+                                    style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setMediaIndex((mediaIndex + 1) % mediaUrls.length); }}
+                                    style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}
+                                >
+                                    <ChevronRight size={20} />
+                                </button>
+                                <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '6px' }}>
+                                    {mediaUrls.map((_, i) => (
+                                        <div
+                                            key={i}
+                                            onClick={(e) => { e.stopPropagation(); setMediaIndex(i); }}
+                                            style={{ width: '8px', height: '8px', borderRadius: '50%', background: i === mediaIndex ? 'white' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'background 0.2s' }}
+                                        />
+                                    ))}
+                                </div>
+                            </>
                         )}
                     </div>
                 )}

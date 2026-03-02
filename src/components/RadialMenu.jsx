@@ -14,6 +14,7 @@ const getMenuItems = (event, { onEdit, onViewInfo, onAddSubEvent, onAddMilestone
 
     if (trackId === 'epoch') {
         items.push({ icon: PlusCircle, label: 'Añadir Etapa', action: () => onAddSubEvent(event.id, 'stage'), color: '#34d399' });
+        items.push({ icon: Diamond, label: 'Añadir Hito', action: () => onAddMilestone(event.id), color: '#fbbf24' });
     }
     if (trackId === 'stage') {
         items.push({ icon: PlusCircle, label: 'Añadir Suceso', action: () => onAddSubEvent(event.id, 'event'), color: '#34d399' });

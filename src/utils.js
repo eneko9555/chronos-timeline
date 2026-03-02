@@ -76,14 +76,14 @@ export const createEvent = (isParent = true, parentId = null, order = 0, isMiles
     title: isMilestone ? 'Nuevo Hito' : (eventType === 'epoch' ? 'Nueva Época' : (eventType === 'stage' ? 'Nueva Etapa' : 'Nuevo Suceso')),
     start,
     end,
-    color: isParent ? generateRandomColor() : undefined,
+    color: (isParent || type === 'stage') ? generateRandomColor() : undefined,
     parentId,
     isParent,
     type: eventType,
     order: order, // Orden vertical para reordenamiento
     isMilestone: isMilestone || false, // Nueva propiedad para identificar hitos
     description: '',
-    mediaUrl: '',
+    mediaUrls: [],
     tags: []
   };
 };

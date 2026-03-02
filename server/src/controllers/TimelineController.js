@@ -49,13 +49,13 @@ class TimelineController {
         try {
             const userId = req.user.uid;
             const timelineId = req.params.id;
-            const { events, identifier, description, coverImage, themeId } = req.body;
+            const { events, notes, identifier, description, coverImage, themeId } = req.body;
 
             if (!events) {
                 return res.status(400).json({ error: 'Missing events' });
             }
 
-            const timeline = await this.timelineUseCase.saveTimeline(userId, timelineId, events, { identifier, description, coverImage, themeId });
+            const timeline = await this.timelineUseCase.saveTimeline(userId, timelineId, events, { identifier, description, coverImage, themeId, notes });
 
             if (!timeline) {
                 return res.status(404).json({ error: 'Timeline not found' });
