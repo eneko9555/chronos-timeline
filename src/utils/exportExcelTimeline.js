@@ -34,7 +34,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         '', '', '', 'Título', 'Color',
         'Año Inicio', 'Mes Inicio', 'Día Inicio',
         'Año Fin', 'Mes Fin', 'Día Fin',
-        'Media URL', '', '', '', 'Descripción'
+        'Media URL', '', '', '', 'Descripción', 'Orden'
     ];
     const epochRows = [epochHeaders];
     for (const e of epochs) {
@@ -51,6 +51,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[10] = end.day;
         row[11] = e.mediaUrls?.join(';') || '';
         row[15] = e.description || '';
+        row[16] = e.order != null ? e.order : '';
         epochRows.push(row);
     }
     const wsEpochs = XLSX.utils.aoa_to_sheet(epochRows);
@@ -63,7 +64,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         'Época Padre', 'Título', '', 'Tag 1', 'Tag 2', 'Color',
         'Año Inicio', 'Mes Inicio', 'Día Inicio',
         'Año Fin', 'Mes Fin', 'Día Fin',
-        'Media URL', '', '', '', 'Descripción'
+        'Media URL', '', '', '', 'Descripción', 'Orden'
     ];
     const stageRows = [stageHeaders];
     for (const e of stages) {
@@ -84,6 +85,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[11] = end.day;
         row[12] = e.mediaUrls?.join(';') || '';
         row[16] = e.description || '';
+        row[17] = e.order != null ? e.order : '';
         stageRows.push(row);
     }
     const wsStages = XLSX.utils.aoa_to_sheet(stageRows);
@@ -97,7 +99,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         'Ubicación',
         'Año Inicio', 'Mes Inicio', 'Día Inicio',
         'Año Fin', 'Mes Fin', 'Día Fin',
-        'Media URL', '', '', '', 'Descripción'
+        'Media URL', '', '', '', 'Descripción', 'Orden'
     ];
     const eventRows = [eventHeaders];
     for (const e of evts) {
@@ -119,6 +121,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[12] = end.day;
         row[13] = e.mediaUrls?.join(';') || '';
         row[17] = e.description || '';
+        row[18] = e.order != null ? e.order : '';
         eventRows.push(row);
     }
     const wsEvents = XLSX.utils.aoa_to_sheet(eventRows);
@@ -131,7 +134,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         'Padre', 'Título', '', 'Tag 1', 'Tag 2', '',
         'Ubicación',
         'Año', 'Mes', 'Día',
-        'Media URL', '', '', '', 'Descripción'
+        'Media URL', '', '', '', 'Descripción', 'Orden'
     ];
     const milestoneRows = [milestoneHeaders];
     for (const e of milestones) {
@@ -148,6 +151,7 @@ export const exportTimelineToExcel = (events, timelineName) => {
         row[9] = s.day;
         row[10] = e.mediaUrls?.join(';') || '';
         row[14] = e.description || '';
+        row[15] = e.order != null ? e.order : '';
         milestoneRows.push(row);
     }
     const wsMilestones = XLSX.utils.aoa_to_sheet(milestoneRows);
